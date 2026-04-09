@@ -25,4 +25,9 @@ export default defineConfig({
             formVariants: true,
         }),
     ],
+    server: {
+        headers: {
+            'Content-Security-Policy': "script-src 'self' 'unsafe-eval' 'unsafe-inline'; worker-src 'self' blob:;",
+        },
+    },
 });

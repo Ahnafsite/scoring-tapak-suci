@@ -17,6 +17,8 @@ class DatabaseSeeder extends Seeder
             RoleSeeder::class,
             UserSeeder::class,
             ArenaSeeder::class,
+            RefScoreSeeder::class,
+            RefPunishmentSeeder::class,
         ]);
     }
 }

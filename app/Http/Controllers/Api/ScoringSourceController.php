@@ -55,30 +55,30 @@ class ScoringSourceController extends Controller
             $data = $response->json();
             $matches = $data['data'] ?? $data;
 
-            // Clear existing schedules for this arena
-            \App\Models\FightSchedule::query()->delete();
-
+            // Remove query()->delete() to preserve data on other tables
             foreach ($matches as $match) {
                 $winnerCorner = $match['winner_corner'] ?? null;
                 if ($winnerCorner === 'red') $winnerCorner = 'yellow';
                 elseif ($winnerCorner === 'red_draw') $winnerCorner = 'yellow_draw';
                 
                 // Map the red corner into yellow corner per business logic requirement
-                \App\Models\FightSchedule::create([
-                    'partai_id' => $match['id'] ?? null,
-                    'match_code' => $match['match_code'] ?? $match['kode_partai'] ?? $match['kode'] ?? null,
-                    'match_number' => (int) ($match['match_number'] ?? $match['partai'] ?? $match['nomor_partai'] ?? 0),
-                    'athlete_yellow' => $match['atlete_red'] ?? $match['pesilat_merah'] ?? $match['merah_nama'] ?? $match['athlete_red'] ?? null,
-                    'athlete_blue' => $match['atlete_blue'] ?? $match['pesilat_biru'] ?? $match['biru_nama'] ?? $match['athlete_blue'] ?? null,
-                    'contingent_yellow' => $match['contingent_red'] ?? $match['kontingen_merah'] ?? $match['merah_kontingen'] ?? null,
-                    'contingent_blue' => $match['contingent_blue'] ?? $match['kontingen_biru'] ?? $match['biru_kontingen'] ?? null,
-                    'match_round' => $match['match_round'] ?? $match['babak_int'] ?? null,
-                    'category' => $match['category'] ?? $match['kategori'] ?? null,
-                    'group' => $match['group'] ?? $match['kelas'] ?? $match['golongan'] ?? null,
-                    'status' => $match['status'] ?? 'not_started',
-                    'winner_corner' => $winnerCorner,
-                    'winner_status' => $match['winner_status'] ?? null,
-                ]);
+                \App\Models\FightSchedule::updateOrCreate(
+                    ['partai_id' => $match['id'] ?? null],
+                    [
+                        'match_code' => $match['match_code'] ?? $match['kode_partai'] ?? $match['kode'] ?? null,
+                        'match_number' => (int) ($match['match_number'] ?? $match['partai'] ?? $match['nomor_partai'] ?? 0),
+                        'athlete_yellow' => $match['atlete_red'] ?? $match['pesilat_merah'] ?? $match['merah_nama'] ?? $match['athlete_red'] ?? null,
+                        'athlete_blue' => $match['atlete_blue'] ?? $match['pesilat_biru'] ?? $match['biru_nama'] ?? $match['athlete_blue'] ?? null,
+                        'contingent_yellow' => $match['contingent_red'] ?? $match['kontingen_merah'] ?? $match['merah_kontingen'] ?? null,
+                        'contingent_blue' => $match['contingent_blue'] ?? $match['kontingen_biru'] ?? $match['biru_kontingen'] ?? null,
+                        'match_round' => $match['match_round'] ?? $match['babak_int'] ?? null,
+                        'category' => $match['category'] ?? $match['kategori'] ?? null,
+                        'group' => $match['group'] ?? $match['kelas'] ?? $match['golongan'] ?? null,
+                        'status' => $match['status'] ?? 'not_started',
+                        'winner_corner' => $winnerCorner,
+                        'winner_status' => $match['winner_status'] ?? null,
+                    ]
+                );
             }
 
             return response()->json(['message' => 'Arena setup successfully and matches synced.', 'matches_count' => count($matches)]);

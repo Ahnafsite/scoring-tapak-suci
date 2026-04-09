@@ -5,11 +5,27 @@
 @source '../../vendor/laravel/framework/src/Illuminate/Pagination/resources/views/*.blade.php';
 @source '../../storage/framework/views/*.php';
 
+@font-face {
+    font-family: 'LaLiga';
+    src: url('../../public/assets/fonts/LaLigaRegular.otf') format('opentype');
+    font-weight: 400;
+    font-style: normal;
+    font-display: swap;
+}
+
+@font-face {
+    font-family: 'LaLiga';
+    src: url('../../public/assets/fonts/LaLiga.ttf') format('truetype');
+    font-weight: 700;
+    font-style: normal;
+    font-display: swap;
+}
+
 @custom-variant dark (&:is(.dark *));
 
 @theme inline {
     --font-sans:
-        Instrument Sans, ui-sans-serif, system-ui, sans-serif,
+        'LaLiga', ui-sans-serif, system-ui, sans-serif,
         'Apple Color Emoji', 'Segoe UI Emoji', 'Segoe UI Symbol',
         'Noto Color Emoji';
 
@@ -40,6 +56,9 @@
 
     --color-destructive: var(--destructive);
     --color-destructive-foreground: var(--destructive-foreground);
+
+    --color-success: var(--success);
+    --color-success-foreground: var(--success-foreground);
 
     --color-border: var(--border);
     --color-input: var(--input);
@@ -83,83 +102,93 @@
     body,
     html {
         --font-sans:
-            'Instrument Sans', ui-sans-serif, system-ui, sans-serif,
+            'LaLiga', ui-sans-serif, system-ui, sans-serif,
             'Apple Color Emoji', 'Segoe UI Emoji', 'Segoe UI Symbol',
             'Noto Color Emoji';
     }
 }
 
+/* ──────────────────────────────────────────────
+   Light Theme — Clean Yellow-Gold Primary
+   ────────────────────────────────────────────── */
 :root {
     --background: hsl(0 0% 100%);
-    --foreground: hsl(0 0% 3.9%);
+    --foreground: hsl(0 0% 5%);
     --card: hsl(0 0% 100%);
-    --card-foreground: hsl(0 0% 3.9%);
+    --card-foreground: hsl(0 0% 5%);
     --popover: hsl(0 0% 100%);
-    --popover-foreground: hsl(0 0% 3.9%);
-    --primary: hsl(0 100% 50%);
-    --primary-foreground: hsl(0 0% 98%);
-    --secondary: hsl(0 0% 92.1%);
-    --secondary-foreground: hsl(0 0% 9%);
-    --muted: hsl(0 0% 96.1%);
-    --muted-foreground: hsl(0 0% 45.1%);
-    --accent: hsl(0 0% 96.1%);
-    --accent-foreground: hsl(0 0% 9%);
+    --popover-foreground: hsl(0 0% 5%);
+    --primary: hsl(45 93% 47%);
+    --primary-foreground: hsl(0 0% 5%);
+    --secondary: hsl(0 0% 95%);
+    --secondary-foreground: hsl(0 0% 12%);
+    --muted: hsl(0 0% 96%);
+    --muted-foreground: hsl(0 0% 45%);
+    --accent: hsl(45 60% 94%);
+    --accent-foreground: hsl(35 80% 28%);
     --destructive: hsl(0 84.2% 60.2%);
     --destructive-foreground: hsl(0 0% 98%);
-    --border: hsl(0 0% 92.8%);
-    --input: hsl(0 0% 89.8%);
-    --ring: hsl(0 0% 3.9%);
-    --chart-1: hsl(12 76% 61%);
+    --success: hsl(142.1 70.6% 45.3%);
+    --success-foreground: hsl(0 0% 98%);
+    --border: hsl(0 0% 90%);
+    --input: hsl(0 0% 90%);
+    --ring: hsl(45 93% 47%);
+    --chart-1: hsl(45 93% 47%);
     --chart-2: hsl(173 58% 39%);
     --chart-3: hsl(197 37% 24%);
-    --chart-4: hsl(43 74% 66%);
-    --chart-5: hsl(27 87% 67%);
-    --radius: 0.5rem;
+    --chart-4: hsl(280 65% 60%);
+    --chart-5: hsl(12 76% 61%);
+    --radius: 0.625rem;
     --sidebar-background: hsl(0 0% 98%);
-    --sidebar-foreground: hsl(240 5.3% 26.1%);
-    --sidebar-primary: hsl(0 0% 10%);
-    --sidebar-primary-foreground: hsl(0 0% 98%);
-    --sidebar-accent: hsl(0 0% 94%);
-    --sidebar-accent-foreground: hsl(0 0% 30%);
+    --sidebar-foreground: hsl(0 0% 25%);
+    --sidebar-primary: hsl(45 93% 47%);
+    --sidebar-primary-foreground: hsl(0 0% 5%);
+    --sidebar-accent: hsl(45 40% 95%);
+    --sidebar-accent-foreground: hsl(0 0% 25%);
     --sidebar-border: hsl(0 0% 91%);
-    --sidebar-ring: hsl(217.2 91.2% 59.8%);
+    --sidebar-ring: hsl(45 93% 47%);
     --sidebar: hsl(0 0% 98%);
 }
 
+/* ──────────────────────────────────────────────
+   Dark Theme — Elegant, Clean, Yellow-Gold
+   ────────────────────────────────────────────── */
 .dark {
-    --background: hsl(0 0% 3.9%);
-    --foreground: hsl(0 0% 98%);
-    --card: hsl(0 0% 3.9%);
-    --card-foreground: hsl(0 0% 98%);
-    --popover: hsl(0 0% 3.9%);
-    --popover-foreground: hsl(0 0% 98%);
-    --primary: hsl(0 100% 50%);
-    --primary-foreground: hsl(0 0% 98%);
-    --secondary: hsl(0 0% 14.9%);
-    --secondary-foreground: hsl(0 0% 98%);
-    --muted: hsl(0 0% 16.08%);
-    --muted-foreground: hsl(0 0% 63.9%);
-    --accent: hsl(0 0% 14.9%);
-    --accent-foreground: hsl(0 0% 98%);
-    --destructive: hsl(0 84% 60%);
+    --background: hsl(0 0% 4%);
+    --foreground: hsl(0 0% 93%);
+    --card: hsl(0 0% 7%);
+    --card-foreground: hsl(0 0% 93%);
+    --popover: hsl(0 0% 7%);
+    --popover-foreground: hsl(0 0% 93%);
+    --primary: hsl(45 93% 52%);
+    --primary-foreground: hsl(0 0% 5%);
+    --secondary: hsl(0 0% 12%);
+    --secondary-foreground: hsl(0 0% 93%);
+    --muted: hsl(0 0% 12%);
+    --muted-foreground: hsl(0 0% 55%);
+    --accent: hsl(0 0% 12%);
+    --accent-foreground: hsl(0 0% 93%);
+    --destructive: hsl(0 84.2% 60.2%);
     --destructive-foreground: hsl(0 0% 98%);
-    --border: hsl(0 0% 14.9%);
-    --input: hsl(0 0% 14.9%);
-    --ring: hsl(0 0% 83.1%);
-    --chart-1: hsl(220 70% 50%);
+    --success: hsl(142.1 70.6% 45.3%);
+    --success-foreground: hsl(0 0% 98%);
+    --border: hsl(0 0% 14%);
+    --input: hsl(0 0% 14%);
+    --ring: hsl(45 93% 52%);
+    --chart-1: hsl(45 93% 52%);
     --chart-2: hsl(160 60% 45%);
     --chart-3: hsl(30 80% 55%);
     --chart-4: hsl(280 65% 60%);
     --chart-5: hsl(340 75% 55%);
-    --sidebar-background: hsl(0 0% 7%);
-    --sidebar-foreground: hsl(0 0% 95.9%);
-    --sidebar-primary: hsl(360, 100%, 100%);
-    --sidebar-primary-foreground: hsl(0 0% 100%);
-    --sidebar-accent: hsl(0 0% 15.9%);
-    --sidebar-accent-foreground: hsl(240 4.8% 95.9%);
-    --sidebar-border: hsl(0 0% 15.9%);
-    --sidebar-ring: hsl(217.2 91.2% 59.8%);
-    --sidebar: hsl(240 5.9% 10%);
+    --sidebar-background: hsl(0 0% 5.5%);
+    --sidebar-foreground: hsl(0 0% 90%);
+    --sidebar-primary: hsl(45 93% 52%);
+    --sidebar-primary-foreground: hsl(0 0% 5%);
+    --sidebar-accent: hsl(0 0% 13%);
+    --sidebar-accent-foreground: hsl(0 0% 90%);
+    --sidebar-border: hsl(0 0% 14%);
+    --sidebar-ring: hsl(45 93% 52%);
+    --sidebar: hsl(0 0% 5.5%);
 }
 
 @layer base {

@@ -25,15 +25,24 @@ const handleLogout = () => {
 
 <template>
     <Head title="Dashboard" />
-    <div class="flex min-h-screen items-center justify-center bg-black text-white dark:bg-black relative">
+    <div class="flex min-h-screen items-center justify-center bg-background text-foreground relative">
         <div class="flex flex-col items-center justify-center space-y-8">
-            <h1 class="text-3xl font-bold tracking-tight">Selamat Datang, {{ userName }}</h1>
+            <h1 class="text-3xl font-bold tracking-tight">Selamat Datang, {{ userName.replace('Juri', 'Pembantu Wasit') }}</h1>
             
-            <Link href="/fight-match-control">
-                <Button size="lg" class="text-lg px-8 py-6 rounded-xl bg-red-600 hover:bg-red-700 text-white font-semibold">
-                    Tanding Olahraga
-                </Button>
-            </Link>
+            <template v-if="page.props.auth?.user?.role?.name === 'Operator' || page.props.auth?.user?.role?.name === 'Sekretaris'">
+                <Link href="/fight-match-control">
+                    <Button size="lg" class="text-lg px-8 py-6 rounded-xl font-semibold">
+                        Control Panel Tanding
+                    </Button>
+                </Link>
+            </template>
+            <template v-else-if="page.props.auth?.user?.role?.name === 'Juri'">
+                <Link href="/fight-jury">
+                    <Button size="lg" class="text-lg px-8 py-6 rounded-xl font-semibold">
+                        Tanding Olahraga
+                    </Button>
+                </Link>
+            </template>
         </div>
 
         <div class="fixed bottom-6 left-6">
