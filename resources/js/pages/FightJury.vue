@@ -4,6 +4,7 @@ import { computed, ref, onMounted, onUnmounted, watch } from 'vue';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Bell, Delete } from 'lucide-vue-next';
+import axios from 'axios';
 
 const props = defineProps<{
     arena: any;
@@ -19,11 +20,15 @@ const pwName = computed(() => userName.value.replace('Juri', 'Pembantu Wasit'));
 
 // Reactive match state — starts from server-side props, updated via Echo
 const currentMatch = ref<any>(props.activeMatch ?? null);
+const localYellowPoints = ref<any[]>([...(props.yellowPoints || [])]);
+const localBluePoints = ref<any[]>([...(props.bluePoints || [])]);
+const localRecapPoints = ref<any[]>([...(props.recapPoints || [])]);
 
 // Sync with Inertia props changes
-watch(() => props.activeMatch, (newVal) => {
-    currentMatch.value = newVal;
-}, { deep: true });
+watch(() => props.activeMatch, (newVal) => { currentMatch.value = newVal; }, { deep: true });
+watch(() => props.yellowPoints, (newVal) => { localYellowPoints.value = [...(newVal || [])]; }, { deep: true });
+watch(() => props.bluePoints, (newVal) => { localBluePoints.value = [...(newVal || [])]; }, { deep: true });
+watch(() => props.recapPoints, (newVal) => { localRecapPoints.value = [...(newVal || [])]; }, { deep: true });
 
 // Show scoring UI only when status is 'ongoing'
 const isLoading = computed(() => {
@@ -38,17 +43,17 @@ const juryNumber = computed(() => {
 const roundsData = computed(() => {
     return [1, 2, 3].map(round => {
         // Yellow Details
-        const yDetails = (props.yellowPoints || []).filter(
+        const yDetails = localYellowPoints.value.filter(
             p => p.jury_number === juryNumber.value && p.round_number === round
         );
         
         // Blue Details
-        const bDetails = (props.bluePoints || []).filter(
+        const bDetails = localBluePoints.value.filter(
             p => p.jury_number === juryNumber.value && p.round_number === round
         );
 
         // Recap
-        const recap = (props.recapPoints || []).find(r => r.round_number === round);
+        const recap = localRecapPoints.value.find(r => r.round_number === round);
 
         let yTotal = 0;
         let bTotal = 0;
@@ -70,22 +75,92 @@ const roundsData = computed(() => {
     });
 });
 
+// Scoring Submission Logic
+const submitScore = async (corner: 'yellow' | 'blue', type: 'score' | 'punishment', ref_id: number) => {
+    if (!currentMatch.value || currentMatch.value.status !== 'ongoing') return;
+    
+    try {
+        const response = await axios.post('/api/jury/score', {
+            partai_id: currentMatch.value.id,
+            corner,
+            round_number: currentMatch.value.round_number,
+            jury_number: juryNumber.value,
+            type,
+            ref_id
+        });
+
+        // Instant local optimistic update
+        const data = response.data;
+        if (data.success) {
+            if (corner === 'yellow') localYellowPoints.value.push(data.detail);
+            if (corner === 'blue') localBluePoints.value.push(data.detail);
+
+            if (data.recap) {
+                const idx = localRecapPoints.value.findIndex(r => r.round_number === data.recap.round_number);
+                if (idx !== -1) localRecapPoints.value[idx] = data.recap;
+                else localRecapPoints.value.push(data.recap);
+            }
+        }
+    } catch (e) {
+        console.error("Failed to submit score:", e);
+    }
+};
+
+const deleteLastScore = async (corner: 'yellow' | 'blue') => {
+    if (!currentMatch.value || currentMatch.value.status !== 'ongoing') return;
+
+    const list = corner === 'yellow' ? localYellowPoints.value : localBluePoints.value;
+    const items = list.filter(p => p.jury_number === juryNumber.value && p.round_number === currentMatch.value.round_number);
+    if (!items.length) return;
+    
+    const lastItem = items[items.length - 1];
+
+    try {
+        const response = await axios.delete(`/api/jury/score/${lastItem.id}`, {
+            data: {
+                partai_id: currentMatch.value.id,
+                corner,
+                round_number: currentMatch.value.round_number,
+                jury_number: juryNumber.value
+            }
+        });
+
+        if (response.data.success) {
+            if (corner === 'yellow') {
+                localYellowPoints.value = localYellowPoints.value.filter(p => p.id !== lastItem.id);
+            } else {
+                localBluePoints.value = localBluePoints.value.filter(p => p.id !== lastItem.id);
+            }
+
+            if (response.data.recap) {
+                const idx = localRecapPoints.value.findIndex(r => r.round_number === response.data.recap.round_number);
+                if (idx !== -1) localRecapPoints.value[idx] = response.data.recap;
+            }
+        }
+    } catch (e) {
+        console.error("Failed to delete score:", e);
+    }
+};
+
 // Real-time Echo listener
-let echoChannel: any = null;
+// FightJury only listens for match STATE changes (status/round/match switch).
+// Score updates are NOT listened here — the jury that submitted already updated
+// locally via axios response. match.score channel is for other observers (e.g. Operator).
+let echoStatusChannel: any = null;
 
 onMounted(() => {
     const echo = (window as any).Echo;
     
     if (echo) {
-        echoChannel = echo.channel('match.control')
+        echoStatusChannel = echo.channel('match.status')
             .listen('.ActiveMatchUpdated', (e: any) => {
                 if (e.match) {
                     if (!currentMatch.value || currentMatch.value.id !== e.match.id) {
-                        // Match changed completely (e.g. sync operator), refresh via inertia to get new points
+                        // Match changed entirely — reload scoring data from server
                         currentMatch.value = e.match;
                         router.reload({ only: ['activeMatch', 'recapPoints', 'yellowPoints', 'bluePoints'] });
                     } else {
-                        // Just status/round update
+                        // Status/round update only
                         currentMatch.value = e.match;
                     }
                 }
@@ -94,15 +169,14 @@ onMounted(() => {
 });
 
 onUnmounted(() => {
-    if (echoChannel) {
-        echoChannel.stopListening('.ActiveMatchUpdated');
+    if (echoStatusChannel) {
+        echoStatusChannel.stopListening('.ActiveMatchUpdated');
         const echo = (window as any).Echo;
         if (echo) {
-            echo.leaveChannel('match.control');
+            echo.leaveChannel('match.status');
         }
     }
 });
-
 </script>
 
 <template>
@@ -237,24 +311,24 @@ onUnmounted(() => {
                     
                     <!-- Yellow Corner Buttons -->
                     <div class="flex-1 grid grid-cols-4 grid-rows-3 gap-3 h-full w-full">
-                        <button class="bg-yellow-400 hover:bg-yellow-500 text-black font-black text-2xl rounded-md transition-colors flex items-center justify-center">20</button>
-                        <button class="bg-yellow-400 hover:bg-yellow-500 text-black font-black text-2xl rounded-md transition-colors flex items-center justify-center">30</button>
-                        <button class="bg-yellow-400 hover:bg-yellow-500 text-black font-black text-2xl rounded-md transition-colors flex items-center justify-center">40</button>
+                        <button @click="submitScore('yellow', 'score', 1)" class="bg-yellow-400 hover:bg-yellow-500 text-black font-black text-2xl rounded-md transition-colors flex items-center justify-center">20</button>
+                        <button @click="submitScore('yellow', 'score', 3)" class="bg-yellow-400 hover:bg-yellow-500 text-black font-black text-2xl rounded-md transition-colors flex items-center justify-center">30</button>
+                        <button @click="submitScore('yellow', 'score', 5)" class="bg-yellow-400 hover:bg-yellow-500 text-black font-black text-2xl rounded-md transition-colors flex items-center justify-center">40</button>
                         <button class="bg-yellow-400 hover:bg-yellow-500 text-black font-black text-2xl rounded-md transition-colors flex items-center justify-center">
                             <Bell class="w-8 h-8 stroke-[3]" />
                         </button>
                         
-                        <button class="bg-yellow-400 hover:bg-yellow-500 text-black font-black text-2xl rounded-md transition-colors flex items-center justify-center">10+20</button>
-                        <button class="bg-yellow-400 hover:bg-yellow-500 text-black font-black text-2xl rounded-md transition-colors flex items-center justify-center">10+30</button>
-                        <button class="bg-yellow-400 hover:bg-yellow-500 text-black font-black text-2xl rounded-md transition-colors flex items-center justify-center">10+40</button>
-                        <button class="bg-yellow-400 hover:bg-yellow-500 text-black font-black text-2xl rounded-md transition-colors flex items-center justify-center">
+                        <button @click="submitScore('yellow', 'score', 2)" class="bg-yellow-400 hover:bg-yellow-500 text-black font-black text-2xl rounded-md transition-colors flex items-center justify-center">10+20</button>
+                        <button @click="submitScore('yellow', 'score', 4)" class="bg-yellow-400 hover:bg-yellow-500 text-black font-black text-2xl rounded-md transition-colors flex items-center justify-center">10+30</button>
+                        <button @click="submitScore('yellow', 'score', 6)" class="bg-yellow-400 hover:bg-yellow-500 text-black font-black text-2xl rounded-md transition-colors flex items-center justify-center">10+40</button>
+                        <button @click="deleteLastScore('yellow')" class="bg-yellow-400 hover:bg-yellow-500 text-black font-black text-2xl rounded-md transition-colors flex items-center justify-center">
                             <Delete class="w-8 h-8 stroke-[3]" />
                         </button>
 
-                        <button class="bg-yellow-400 hover:bg-yellow-500 text-black font-black text-2xl rounded-md transition-colors flex items-center justify-center">-10</button>
-                        <button class="bg-yellow-400 hover:bg-yellow-500 text-black font-black text-2xl rounded-md transition-colors flex items-center justify-center">-20</button>
-                        <button class="bg-yellow-400 hover:bg-yellow-500 text-black font-black text-2xl rounded-md transition-colors flex items-center justify-center">-30</button>
-                        <button class="bg-yellow-400 hover:bg-yellow-500 text-black font-black text-2xl rounded-md transition-colors flex items-center justify-center">-40</button>
+                        <button @click="submitScore('yellow', 'punishment', 4)" class="bg-yellow-400 hover:bg-yellow-500 text-black font-black text-2xl rounded-md transition-colors flex items-center justify-center">-10</button>
+                        <button @click="submitScore('yellow', 'punishment', 1)" class="bg-yellow-400 hover:bg-yellow-500 text-black font-black text-2xl rounded-md transition-colors flex items-center justify-center">-20</button>
+                        <button @click="submitScore('yellow', 'punishment', 2)" class="bg-yellow-400 hover:bg-yellow-500 text-black font-black text-2xl rounded-md transition-colors flex items-center justify-center">-30</button>
+                        <button @click="submitScore('yellow', 'punishment', 3)" class="bg-yellow-400 hover:bg-yellow-500 text-black font-black text-2xl rounded-md transition-colors flex items-center justify-center">-40</button>
                     </div>
 
                     <!-- Neutral Logo Section (Center) -->
@@ -264,24 +338,24 @@ onUnmounted(() => {
 
                     <!-- Blue Corner Buttons -->
                     <div class="flex-1 grid grid-cols-4 grid-rows-3 gap-3 h-full w-full">
-                        <button class="bg-blue-600 hover:bg-blue-500 text-white font-black text-2xl rounded-md transition-colors flex items-center justify-center">20</button>
-                        <button class="bg-blue-600 hover:bg-blue-500 text-white font-black text-2xl rounded-md transition-colors flex items-center justify-center">30</button>
-                        <button class="bg-blue-600 hover:bg-blue-500 text-white font-black text-2xl rounded-md transition-colors flex items-center justify-center">40</button>
+                        <button @click="submitScore('blue', 'score', 1)" class="bg-blue-600 hover:bg-blue-500 text-white font-black text-2xl rounded-md transition-colors flex items-center justify-center">20</button>
+                        <button @click="submitScore('blue', 'score', 3)" class="bg-blue-600 hover:bg-blue-500 text-white font-black text-2xl rounded-md transition-colors flex items-center justify-center">30</button>
+                        <button @click="submitScore('blue', 'score', 5)" class="bg-blue-600 hover:bg-blue-500 text-white font-black text-2xl rounded-md transition-colors flex items-center justify-center">40</button>
                         <button class="bg-blue-600 hover:bg-blue-500 text-white font-black text-2xl rounded-md transition-colors flex items-center justify-center">
                             <Bell class="w-8 h-8 stroke-[3]" />
                         </button>
 
-                        <button class="bg-blue-600 hover:bg-blue-500 text-white font-black text-2xl rounded-md transition-colors flex items-center justify-center">10+20</button>
-                        <button class="bg-blue-600 hover:bg-blue-500 text-white font-black text-2xl rounded-md transition-colors flex items-center justify-center">10+30</button>
-                        <button class="bg-blue-600 hover:bg-blue-500 text-white font-black text-2xl rounded-md transition-colors flex items-center justify-center">10+40</button>
-                        <button class="bg-blue-600 hover:bg-blue-500 text-white font-black text-2xl rounded-md transition-colors flex items-center justify-center">
+                        <button @click="submitScore('blue', 'score', 2)" class="bg-blue-600 hover:bg-blue-500 text-white font-black text-2xl rounded-md transition-colors flex items-center justify-center">10+20</button>
+                        <button @click="submitScore('blue', 'score', 4)" class="bg-blue-600 hover:bg-blue-500 text-white font-black text-2xl rounded-md transition-colors flex items-center justify-center">10+30</button>
+                        <button @click="submitScore('blue', 'score', 6)" class="bg-blue-600 hover:bg-blue-500 text-white font-black text-2xl rounded-md transition-colors flex items-center justify-center">10+40</button>
+                        <button @click="deleteLastScore('blue')" class="bg-blue-600 hover:bg-blue-500 text-white font-black text-2xl rounded-md transition-colors flex items-center justify-center">
                             <Delete class="w-8 h-8 stroke-[3]" />
                         </button>
 
-                        <button class="bg-blue-600 hover:bg-blue-500 text-white font-black text-2xl rounded-md transition-colors flex items-center justify-center">-10</button>
-                        <button class="bg-blue-600 hover:bg-blue-500 text-white font-black text-2xl rounded-md transition-colors flex items-center justify-center">-20</button>
-                        <button class="bg-blue-600 hover:bg-blue-500 text-white font-black text-2xl rounded-md transition-colors flex items-center justify-center">-30</button>
-                        <button class="bg-blue-600 hover:bg-blue-500 text-white font-black text-2xl rounded-md transition-colors flex items-center justify-center">-40</button>
+                        <button @click="submitScore('blue', 'punishment', 4)" class="bg-blue-600 hover:bg-blue-500 text-white font-black text-2xl rounded-md transition-colors flex items-center justify-center">-10</button>
+                        <button @click="submitScore('blue', 'punishment', 1)" class="bg-blue-600 hover:bg-blue-500 text-white font-black text-2xl rounded-md transition-colors flex items-center justify-center">-20</button>
+                        <button @click="submitScore('blue', 'punishment', 2)" class="bg-blue-600 hover:bg-blue-500 text-white font-black text-2xl rounded-md transition-colors flex items-center justify-center">-30</button>
+                        <button @click="submitScore('blue', 'punishment', 3)" class="bg-blue-600 hover:bg-blue-500 text-white font-black text-2xl rounded-md transition-colors flex items-center justify-center">-40</button>
                     </div>
 
                 </div>

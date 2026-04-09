@@ -2,25 +2,34 @@
 
 namespace App\Events;
 
-use App\Models\FightMatch;
 use Illuminate\Broadcasting\Channel;
 use Illuminate\Broadcasting\InteractsWithSockets;
 use Illuminate\Contracts\Broadcasting\ShouldBroadcastNow;
 use Illuminate\Foundation\Events\Dispatchable;
 use Illuminate\Queue\SerializesModels;
 
-class ActiveMatchUpdated implements ShouldBroadcastNow
+class JuryScoreUpdated implements ShouldBroadcastNow
 {
     use Dispatchable, InteractsWithSockets, SerializesModels;
 
-    public array $match;
+    public $partaiId;
+    public $corner;
+    public $roundNumber;
+    public $juryNumber;
+    public $scoreDetail;
+    public $recap;
 
     /**
      * Create a new event instance.
      */
-    public function __construct(?FightMatch $fightMatch = null)
+    public function __construct($partaiId, $corner, $roundNumber, $juryNumber, $scoreDetail, $recap)
     {
-        $this->match = $fightMatch ? $fightMatch->toArray() : [];
+        $this->partaiId = $partaiId;
+        $this->corner = $corner;
+        $this->roundNumber = $roundNumber;
+        $this->juryNumber = $juryNumber;
+        $this->scoreDetail = $scoreDetail;
+        $this->recap = $recap;
     }
 
     /**
@@ -29,7 +38,7 @@ class ActiveMatchUpdated implements ShouldBroadcastNow
     public function broadcastOn(): array
     {
         return [
-            new Channel('match.status'),
+            new Channel('match.score'),
         ];
     }
 
@@ -38,6 +47,6 @@ class ActiveMatchUpdated implements ShouldBroadcastNow
      */
     public function broadcastAs(): string
     {
-        return 'ActiveMatchUpdated';
+        return 'JuryScoreUpdated';
     }
 }

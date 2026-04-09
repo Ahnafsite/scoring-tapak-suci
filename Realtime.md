@@ -4,31 +4,23 @@ This document describes the real-time data flow used in the Tapak Suci Scoring S
 
 ## Overview
 
-The system uses **Laravel Reverb** (WebSocket server) and **Laravel Echo** (JS client) to push match state changes from the **Operator** (`FightMatchControl`) to the **Jury** (`FightJury`) pages in real-time—without polling or page refresh.
+The system uses **Laravel Reverb** (WebSocket server) and **Laravel Echo** (JS client) to push match state changes from the **Operator** (`FightMatchControl`) to the **Jury** (`FightJury`) pages in real-time — and vice versa for score submissions.
+
+Two dedicated channels are used to separate concerns:
+
+| Channel         | Direction             | Event                  | Purpose                          |
+|-----------------|-----------------------|------------------------|----------------------------------|
+| `match.status`  | Operator → Jury       | `ActiveMatchUpdated`   | Match state (status/round/sync)  |
+| `match.score`   | Jury → Operators/etc  | `JuryScoreUpdated`     | Score/punishment input by jury   |
 
 ```
-┌──────────────────────┐       broadcast()        ┌──────────────────┐
-│  FightMatchControl   │  ───── HTTP POST ──────▶ │ MatchSyncController│
-│  (Operator Browser)  │                           │  (Laravel API)    │
-└──────────────────────┘                           └────────┬─────────┘
-                                                            │
-                                                  ActiveMatchUpdated
-                                                   (ShouldBroadcast)
-                                                            │
-                                                   ┌────────▼─────────┐
-                                                   │  Laravel Reverb   │
-                                                   │  (WebSocket)      │
-                                                   └────────┬─────────┘
-                                                            │
-                                              Channel: match.control
-                                              Event: .ActiveMatchUpdated
-                                                            │
-                                                   ┌────────▼─────────┐
-                                                   │   FightJury       │
-                                                   │ (Jury Browser x4) │
-                                                   │  via Echo.listen  │
-                                                   └──────────────────┘
+                          match.status Channel
+┌──────────────────────┐  ─────────────────────────────▶  ┌──────────────────┐
+│  FightMatchControl   │                                   │   FightJury (x4) │
+│  (Operator Browser)  │  ◀─────────────────────────────  │  (Jury Browsers) │
+└──────────────────────┘          match.score Channel      └──────────────────┘
 ```
+
 
 ## Configuration
 
@@ -97,46 +89,83 @@ configureEcho({
 | `MatchSyncController@updateRound`   | Round change (1 → 2 → TBH)       |
 | `MatchSyncController@syncMatch`     | New match loaded from API         |
 
-### Dispatch Pattern
+## Two-Way Architecture
 
-```php
-broadcast(new ActiveMatchUpdated($match->fresh()))->toOthers();
-```
-
-`->toOthers()` prevents the broadcasting user (Operator) from receiving the event back on their own page.
-
-## Frontend Listeners
-
-### FightJury.vue
-
-```typescript
-// onMounted
-const echo = window.Echo;
-echo.channel('match.control')
-    .listen('.ActiveMatchUpdated', (e) => {
-        currentMatch.value = e.match;
-    });
-```
-
-**Behavior:**
-- `isLoading` = `true` when `currentMatch.status !== 'ongoing'`
-- Only shows the scoring UI (form + buttons) when status is `ongoing`
-- On `not_started` / `paused` / `done` → shows the waiting/logo state
-
-## Status Flow
+The WebSocket communication flows in both directions to keep Operators and Juries perfectly in sync.
 
 ```
-                    START
-  not_started ──────────────▶ ongoing
-       ▲                        │
-       │ RESET            PAUSE │
-       │                        ▼
-       └───────────────── paused
-                             │
-                   KEPUTUSAN │
-                             ▼
-                           done
+┌──────────────────────┐   match.control Channel   ┌──────────────────┐
+│  FightMatchControl   │ ◀──────────────┐          │ FightJury (x4)   │
+│  (Operator Browser)  │                │          │ (Jury Browsers)  │
+└───────────┬──────────┘                │          └─────────┬────────┘
+            │                           │                    │
+        syncMatch()                     │               submitScore()
+       updateStatus()           .JuryScoreUpdated        deleteScore()
+       updateRound()                    │                    │
+            │                           │                    │
+┌───────────▼──────────┐                │          ┌─────────▼────────┐
+│ MatchSyncController  │                │          │JuryScoreController│
+└───────────┬──────────┘                │          └─────────┬────────┘
+            │                           │                    │
+   .ActiveMatchUpdated──────────────────┘                    │
+            │                                                │
+            └───────────────▶ Laravel Reverb ◀───────────────┘
 ```
+
+## Event: `ActiveMatchUpdated`
+
+**File:** `app/Events/ActiveMatchUpdated.php`
+
+| Property     | Type          | Description                        |
+|-------------|---------------|------------------------------------|
+| `match`     | `array`       | Full FightMatch model as array     |
+
+### Channel
+
+| Type   | Name              | Auth Required |
+|--------|-------------------|---------------|
+| Public | `match.control`   | No            |
+
+### Broadcast Name
+
+`.ActiveMatchUpdated` (dot-prefixed because `broadcastAs()` is used)
+
+### Dispatched From
+
+| Controller Method             | Trigger                           |
+|-------------------------------|-----------------------------------|
+| `MatchSyncController@updateStatus`  | START / PAUSE / RESUME / KEPUTUSAN / RESET |
+| `MatchSyncController@updateRound`   | Round change (1 → 2 → TBH)       |
+| `MatchSyncController@syncMatch`     | New match loaded from API         |
+
+## Event: `JuryScoreUpdated`
+
+**File:** `app/Events/JuryScoreUpdated.php`
+
+| Property     | Type          | Description                        |
+|-------------|---------------|------------------------------------|
+| `partaiId`  | `int`         | ID of the current match            |
+| `corner`    | `string`      | 'blue' or 'yellow'                 |
+| `roundNum`  | `int`         | Round number scored                |
+| `juryNum`   | `int`         | ID (1-4) of the acting jury        |
+| `scoreDetail`| `array/null` | Detail object ingested/deleted.    |
+| `recap`     | `array/null`  | Full updated recap for that round. |
+
+### Broadcast Name
+
+`.JuryScoreUpdated`
+
+### Dispatched From
+
+| Controller Method             | Trigger                           |
+|-------------------------------|-----------------------------------|
+| `JuryScoreController@storeScore`  | Any Jury clicks Score/Punishment |
+| `JuryScoreController@deleteScore` | Any Jury clicks Delete           |
+
+### Behavior on Client
+When `JuryScoreUpdated` is broadcasted back to `FightJury`:
+- Points are dynamically pushed/spliced into reactive local arrays without reloading the page.
+- Total amounts automatically reflect new values via the updated `recap` broadcast.
 
 ### Status → FightJury Behavior
 

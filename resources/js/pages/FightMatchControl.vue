@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { Head, router } from '@inertiajs/vue3';
-import { ref, computed } from 'vue';
+import { ref, computed, onMounted, onUnmounted } from 'vue';
 import axios from 'axios';
 import {
     Dialog,
@@ -251,6 +251,49 @@ const getRoundWinner = (roundNum: number) => {
 const activeRoundRecap = computed(() => {
     if (!currentRecapDetail.value || !Array.isArray(currentRecapDetail.value)) return null;
     return currentRecapDetail.value.find((x: any) => x.round_number == (currentMatchDetail.value?.round_number ?? 1));
+});
+
+// Real-time listeners
+let echoStatusChannel: any = null;
+let echoScoreChannel: any = null;
+
+onMounted(() => {
+    const echo = (window as any).Echo;
+    if (!echo) return;
+
+    // Listen for match status/round changes from Operator
+    echoStatusChannel = echo.channel('match.status')
+        .listen('.ActiveMatchUpdated', (e: any) => {
+            if (e.match) {
+                currentMatchDetail.value = e.match;
+            }
+        });
+
+    // Listen for score updates from any Jury → update Pembantu Wasit recap table
+    echoScoreChannel = echo.channel('match.score')
+        .listen('.JuryScoreUpdated', (e: any) => {
+            if (e.recap && currentRecapDetail.value && Array.isArray(currentRecapDetail.value)) {
+                const idx = currentRecapDetail.value.findIndex((r: any) => r.round_number === e.recap.round_number);
+                if (idx !== -1) {
+                    currentRecapDetail.value[idx] = e.recap;
+                } else {
+                    currentRecapDetail.value.push(e.recap);
+                }
+            }
+        });
+});
+
+onUnmounted(() => {
+    const echo = (window as any).Echo;
+    if (!echo) return;
+    if (echoStatusChannel) {
+        echoStatusChannel.stopListening('.ActiveMatchUpdated');
+        echo.leaveChannel('match.status');
+    }
+    if (echoScoreChannel) {
+        echoScoreChannel.stopListening('.JuryScoreUpdated');
+        echo.leaveChannel('match.score');
+    }
 });
 
 </script>

@@ -40,6 +40,10 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::post('/partai/sync/{partai_id}', [\App\Http\Controllers\Api\MatchSyncController::class, 'syncMatch']);
         Route::post('/partai/update-status', [\App\Http\Controllers\Api\MatchSyncController::class, 'updateStatus']);
         Route::post('/partai/update-round', [\App\Http\Controllers\Api\MatchSyncController::class, 'updateRound']);
+        
+        // Jury Scoring Inputs
+        Route::post('/jury/score', [\App\Http\Controllers\Api\JuryScoreController::class, 'storeScore']);
+        Route::delete('/jury/score/{id}', [\App\Http\Controllers\Api\JuryScoreController::class, 'deleteScore']);
     });
 });
 

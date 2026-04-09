@@ -13,6 +13,7 @@ class RefPunishmentSeeder extends Seeder
     public function run(): void
     {
         $punishments = [
+            ['name' => '-10', 'score' => 20],
             ['name' => '-20', 'score' => 20],
             ['name' => '-30', 'score' => 30],
             ['name' => '-40', 'score' => 40],
