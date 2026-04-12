@@ -8,7 +8,7 @@ Route::redirect('/', '/login')->name('home');
 Route::middleware(['auth', 'verified'])->group(function () {
     Route::inertia('dashboard', 'Dashboard')->name('dashboard');
     Route::get('fight-match-control', function (\Illuminate\Http\Request $request) {
-        if (!in_array($request->user()->role->name, ['Operator', 'Sekretaris'])) {
+        if (!in_array($request->user()->role->name, ['Operator'])) {
             abort(403, 'Unauthorized access.');
         }
         return inertia('FightMatchControl', [
@@ -18,6 +18,19 @@ Route::middleware(['auth', 'verified'])->group(function () {
             'recapJuryPoint' => \App\Models\FightRecapJuryPoint::all(),
         ]);
     })->name('fight-match-control');
+
+    Route::get('fight-secretary', function (\Illuminate\Http\Request $request) {
+        if ($request->user()->role->name !== 'Sekretaris') {
+            abort(403, 'Unauthorized access.');
+        }
+        return inertia('FightSecretary', [
+            'arena' => \App\Models\Arena::first(),
+            'activeMatch' => \App\Models\FightMatch::first(),
+            'recapPoints' => \App\Models\FightRecapJuryPoint::all(),
+            'yellowPoints' => \App\Models\FightDetailJuryPointYellow::with(['score', 'punishment'])->get(),
+            'bluePoints' => \App\Models\FightDetailJuryPointBlue::with(['score', 'punishment'])->get(),
+        ]);
+    })->name('fight-secretary');
 
     Route::get('fight-jury', function (\Illuminate\Http\Request $request) {
         if ($request->user()->role->name !== 'Juri') {

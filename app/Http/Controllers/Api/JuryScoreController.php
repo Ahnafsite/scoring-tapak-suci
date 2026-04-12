@@ -11,6 +11,8 @@ use App\Models\RefPunishment;
 use App\Models\RefScore;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use App\Models\FightMatch;
+use App\Events\ActiveMatchUpdated;
 
 class JuryScoreController extends Controller
 {
@@ -77,23 +79,23 @@ class JuryScoreController extends Controller
 
             $recap->$targetColumn += $scoreValue;
 
-            // Recalculate winner for this jury
-            $blueTotal  = $recap->{"jury_{$juryWord}_total_poin_blue"};
-            $yellowTotal = $recap->{"jury_{$juryWord}_total_poin_yellow"};
-
-            if ($blueTotal > $yellowTotal) {
-                $recap->{"jury_{$juryWord}_winner"} = 'blue';
-            } elseif ($yellowTotal > $blueTotal) {
-                $recap->{"jury_{$juryWord}_winner"} = 'yellow';
-            } else {
-                $recap->{"jury_{$juryWord}_winner"} = 'draw';
-            }
+            $this->updateRecapWinner($recap, $juryWord, $validated['round_number'], $validated['jury_number']);
 
             $recap->save();
 
+            // 3. Re-calculate Match's Total System Score and Update FightMatch
+            $match = FightMatch::find($validated['partai_id']);
+            if ($match) {
+                $match->update([
+                    'total_poin_yellow' => $this->calculateSecretaryValidatedTotal('yellow'),
+                    'total_poin_blue' => $this->calculateSecretaryValidatedTotal('blue'),
+                ]);
+                broadcast(new ActiveMatchUpdated($match))->toOthers();
+            }
+
             DB::commit();
 
-            // 3. Broadcast Event
+            // 4. Broadcast Jury Recap Event
             broadcast(new JuryScoreUpdated(
                 $validated['partai_id'],
                 $validated['corner'],
@@ -164,18 +166,19 @@ class JuryScoreController extends Controller
 
             $recap->$targetColumn -= $scoreValue;
 
-            $blueTotal  = $recap->{"jury_{$juryWord}_total_poin_blue"};
-            $yellowTotal = $recap->{"jury_{$juryWord}_total_poin_yellow"};
-
-            if ($blueTotal > $yellowTotal) {
-                $recap->{"jury_{$juryWord}_winner"} = 'blue';
-            } elseif ($yellowTotal > $blueTotal) {
-                $recap->{"jury_{$juryWord}_winner"} = 'yellow';
-            } else {
-                $recap->{"jury_{$juryWord}_winner"} = 'draw';
-            }
+            $this->updateRecapWinner($recap, $juryWord, $validated['round_number'], $validated['jury_number']);
 
             $recap->save();
+
+            // Re-calculate Match's Total System Score and Update FightMatch
+            $match = FightMatch::find($validated['partai_id']);
+            if ($match) {
+                $match->update([
+                    'total_poin_yellow' => $this->calculateSecretaryValidatedTotal('yellow'),
+                    'total_poin_blue' => $this->calculateSecretaryValidatedTotal('blue'),
+                ]);
+                broadcast(new ActiveMatchUpdated($match))->toOthers();
+            }
 
             DB::commit();
 
@@ -198,5 +201,118 @@ class JuryScoreController extends Controller
             DB::rollBack();
             return response()->json(['success' => false, 'error' => $e->getMessage()], 500);
         }
+    }
+    private function updateRecapWinner($recap, $juryWord, $roundNumber, $juryNumber)
+    {
+        $blueTotal  = $recap->{"jury_{$juryWord}_total_poin_blue"};
+        $yellowTotal = $recap->{"jury_{$juryWord}_total_poin_yellow"};
+
+        if ($yellowTotal > $blueTotal) {
+            $recap->{"jury_{$juryWord}_winner"} = 'yellow';
+        } elseif ($blueTotal > $yellowTotal) {
+            $recap->{"jury_{$juryWord}_winner"} = 'blue';
+        } else {
+            // Draw, check punishments
+            $yellowPunishments = FightDetailJuryPointYellow::where('jury_number', $juryNumber)
+                ->where('round_number', $roundNumber)
+                ->whereNotNull('ref_punishment_id')
+                ->with('punishment')
+                ->get();
+            $yellowPunishmentScore = $yellowPunishments->sum(function($item) {
+                return $item->punishment ? $item->punishment->score : 0;
+            });
+
+            $bluePunishments = FightDetailJuryPointBlue::where('jury_number', $juryNumber)
+                ->where('round_number', $roundNumber)
+                ->whereNotNull('ref_punishment_id')
+                ->with('punishment')
+                ->get();
+            $bluePunishmentScore = $bluePunishments->sum(function($item) {
+                return $item->punishment ? $item->punishment->score : 0;
+            });
+
+            if ($yellowPunishmentScore > $bluePunishmentScore) {
+                $recap->{"jury_{$juryWord}_winner"} = 'blue';
+            } elseif ($bluePunishmentScore > $yellowPunishmentScore) {
+                $recap->{"jury_{$juryWord}_winner"} = 'yellow';
+            } else {
+                $recap->{"jury_{$juryWord}_winner"} = 'draw';
+            }
+        }
+    }
+
+    /**
+     * Calculates the validated total points for a given corner across all rounds.
+     * The rule requires identical score inputs by at least 3 juries at the exact chronological insertion index.
+     */
+    private function calculateSecretaryValidatedTotal($corner)
+    {
+        $totalValidated = 0;
+
+        // Loop over rounds 1 to 3
+        for ($round = 1; $round <= 3; $round++) {
+            $juryInputs = [1 => [], 2 => [], 3 => [], 4 => []];
+
+            if ($corner === 'yellow') {
+                $details = FightDetailJuryPointYellow::where('round_number', $round)
+                    ->orderBy('id', 'asc')
+                    ->with(['score', 'punishment'])
+                    ->get();
+            } else {
+                $details = FightDetailJuryPointBlue::where('round_number', $round)
+                    ->orderBy('id', 'asc')
+                    ->with(['score', 'punishment'])
+                    ->get();
+            }
+
+            // Distribute into 4 jury arrays based on insertion history order
+            foreach ($details as $detail) {
+                $jn = $detail->jury_number;
+                if ($jn >= 1 && $jn <= 4) {
+                    $identifier = $detail->ref_score_id ? "s:{$detail->ref_score_id}" : "p:{$detail->ref_punishment_id}";
+                    
+                    $val = 0;
+                    if ($detail->ref_score_id && $detail->score) {
+                        $val = $detail->score->score;
+                    } elseif ($detail->ref_punishment_id && $detail->punishment) {
+                        $val = -$detail->punishment->score; // Subtract punishment points
+                    }
+                    
+                    $juryInputs[$jn][] = [
+                        'id' => $identifier,
+                        'val' => $val
+                    ];
+                }
+            }
+
+            // Evaluate dynamically index-by-index
+            $maxLen = max(count($juryInputs[1]), count($juryInputs[2]), count($juryInputs[3]), count($juryInputs[4]));
+            for ($i = 0; $i < $maxLen; $i++) {
+                $freq = [];
+                $valueMap = [];
+                
+                for ($j = 1; $j <= 4; $j++) {
+                    if (isset($juryInputs[$j][$i])) {
+                        $item = $juryInputs[$j][$i];
+                        $id = $item['id'];
+                        if (!isset($freq[$id])) {
+                            $freq[$id] = 0;
+                            $valueMap[$id] = $item['val'];
+                        }
+                        $freq[$id]++;
+                    }
+                }
+                
+                // If any button was identically pressed by >=3 juries at this chronological step
+                foreach ($freq as $id => $count) {
+                    if ($count >= 3) {
+                        $totalValidated += $valueMap[$id];
+                        break; 
+                    }
+                }
+            }
+        }
+
+        return $totalValidated;
     }
 }

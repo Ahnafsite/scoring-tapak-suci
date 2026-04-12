@@ -1,0 +1,2 @@
+<?php
+// Valid test check

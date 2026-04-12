@@ -75,6 +75,39 @@ const roundsData = computed(() => {
     });
 });
 
+const computedWinner = computed(() => {
+    const overallY = roundsData.value.reduce((acc, r) => acc + r.yellow_total, 0);
+    const overallB = roundsData.value.reduce((acc, r) => acc + r.blue_total, 0);
+
+    if (overallY > overallB) {
+        return { status: 'yellow', text: 'Pemenang Sudut Kuning' };
+    } else if (overallB > overallY) {
+        return { status: 'blue', text: 'Pemenang Sudut Biru' };
+    } else {
+        const yPunish = localYellowPoints.value.reduce((acc, p) => {
+            if (p.jury_number === juryNumber.value && p.ref_punishment_id) {
+                return acc + (p.punishment?.score || 0);
+            }
+            return acc;
+        }, 0);
+        
+        const bPunish = localBluePoints.value.reduce((acc, p) => {
+            if (p.jury_number === juryNumber.value && p.ref_punishment_id) {
+                return acc + (p.punishment?.score || 0);
+            }
+            return acc;
+        }, 0);
+
+        if (yPunish > bPunish) {
+            return { status: 'blue_pelanggaran', text: 'Pemenang Sudut Biru, karena pelanggaran' };
+        } else if (bPunish > yPunish) {
+            return { status: 'yellow_pelanggaran', text: 'Pemenang Sudut Kuning, karena pelanggaran' };
+        } else {
+            return { status: 'draw', text: 'Seri' };
+        }
+    }
+});
+
 // Scoring Submission Logic
 const submitScore = async (corner: 'yellow' | 'blue', type: 'score' | 'punishment', ref_id: number) => {
     if (!currentMatch.value || currentMatch.value.status !== 'ongoing') return;
@@ -244,6 +277,16 @@ onUnmounted(() => {
                             {{ currentMatch?.contingent_blue || '-' }}
                         </Badge>
                     </div>
+                </div>
+
+                <!-- Winner Alert Banner -->
+                <div :class="[
+                    'shrink-0 w-full py-3 flex items-center justify-center font-bold uppercase tracking-[0.1em] text-lg transition-all duration-500 shadow-2xl z-20 relative border-b border-white/10',
+                    computedWinner.status.startsWith('yellow') ? 'bg-yellow-500 text-black shadow-yellow-500/30' : 
+                    computedWinner.status.startsWith('blue') ? 'bg-blue-600 text-white shadow-blue-600/30' : 
+                    'bg-zinc-900 text-zinc-500'
+                ]">
+                    <span class="drop-shadow-lg">{{ computedWinner.text }}</span>
                 </div>
 
                 <!-- Main Section -->
