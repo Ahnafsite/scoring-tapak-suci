@@ -41,6 +41,11 @@ const currentMatchDetail = ref<any>(props.activeMatch || null);
 const currentRecapDetail = ref<any>(props.recapJuryPoint || null);
 const isSyncing = ref(false);
 
+const isWinnerDialogOpen = ref(false);
+const suggestedWinner = ref('');
+const selectedRoundWinner = ref('');
+const isSavingWinner = ref(false);
+
 const gelanggangList = ref<any[]>([]);
 const sesiList = ref<any[]>([]);
 
@@ -253,6 +258,73 @@ const activeRoundRecap = computed(() => {
     return currentRecapDetail.value.find((x: any) => x.round_number == (currentMatchDetail.value?.round_number ?? 1));
 });
 
+const calculateSuggestedWinner = () => {
+    if (!activeRoundRecap.value) return 'draw';
+    const votes = { yellow: 0, blue: 0, draw: 0 };
+    const juries = [
+        activeRoundRecap.value.jury_one_winner,
+        activeRoundRecap.value.jury_two_winner,
+        activeRoundRecap.value.jury_three_winner,
+        activeRoundRecap.value.jury_four_winner
+    ];
+    juries.forEach(v => {
+        if (v === 'yellow') votes.yellow++;
+        else if (v === 'blue') votes.blue++;
+        else votes.draw++;
+    });
+
+    if (votes.yellow >= 3) return 'yellow';
+    if (votes.blue >= 3) return 'blue';
+    if (votes.draw >= 3) return 'draw';
+
+    if (votes.yellow === 2 && votes.blue === 2) return 'draw';
+    if (votes.yellow === 2) return 'yellow';
+    if (votes.blue === 2) return 'blue';
+    if (votes.draw === 2) return 'draw';
+
+    return 'draw';
+};
+
+const triggerPause = async () => {
+    // Prevent multiple clicks if already paused
+    if (currentMatchDetail.value && currentMatchDetail.value.status === 'paused') {
+        isWinnerDialogOpen.value = true;
+        return;
+    }
+
+    const sug = calculateSuggestedWinner();
+    suggestedWinner.value = sug;
+    selectedRoundWinner.value = sug;
+    
+    isWinnerDialogOpen.value = true;
+    await setStatus('paused');
+};
+
+const saveRoundWinner = async () => {
+    if (!currentMatchDetail.value || !selectedRoundWinner.value) return;
+    isSavingWinner.value = true;
+    try {
+        const response = await axios.post('/api/partai/update-round-winner', {
+            round_number: currentMatchDetail.value.round_number,
+            winner: selectedRoundWinner.value
+        });
+        
+        if (response.data?.data && currentRecapDetail.value) {
+            const idx = currentRecapDetail.value.findIndex((r: any) => r.round_number === response.data.data.round_number);
+            if (idx !== -1) {
+                currentRecapDetail.value.splice(idx, 1, response.data.data);
+            } else {
+                currentRecapDetail.value.push(response.data.data);
+            }
+        }
+        isWinnerDialogOpen.value = false;
+    } catch (e) {
+        console.error(e);
+    } finally {
+        isSavingWinner.value = false;
+    }
+};
+
 // Real-time listeners
 let echoStatusChannel: any = null;
 let echoScoreChannel: any = null;
@@ -404,28 +476,28 @@ onUnmounted(() => {
                          <!-- Yellow Corner Card -->
                          <div :class="[
                                  'flex-1 flex flex-col items-center justify-center p-8 transition-colors duration-500 text-center gap-2 relative', 
-                                 (currentMatchDetail.total_poin_yellow >= currentMatchDetail.total_poin_blue) ? 'bg-yellow-400' : 'bg-zinc-900 grayscale opacity-80'
+                                 ((activeRoundRecap?.total_poin_yellow || 0) >= (activeRoundRecap?.total_poin_blue || 0)) ? 'bg-yellow-400' : 'bg-zinc-900 grayscale opacity-80'
                              ]">
-                             <h2 :class="['font-black text-4xl mb-1 uppercase tracking-wider drop-shadow-sm', (currentMatchDetail.total_poin_yellow >= currentMatchDetail.total_poin_blue) ? 'text-black' : 'text-yellow-400']">
+                             <h2 :class="['font-black text-4xl mb-1 uppercase tracking-wider drop-shadow-sm', ((activeRoundRecap?.total_poin_yellow || 0) >= (activeRoundRecap?.total_poin_blue || 0)) ? 'text-black' : 'text-yellow-400']">
                                  {{ currentMatchDetail.atlete_yellow || '-' }}
                              </h2>
-                             <p :class="['text-xl uppercase font-bold', (currentMatchDetail.total_poin_yellow >= currentMatchDetail.total_poin_blue) ? 'text-black/80' : 'text-white']">
+                             <p :class="['text-xl uppercase font-bold', ((activeRoundRecap?.total_poin_yellow || 0) >= (activeRoundRecap?.total_poin_blue || 0)) ? 'text-black/80' : 'text-white']">
                                  {{ currentMatchDetail.contingent_yellow || '-' }}
                              </p>
                              
                              <!-- Weight and Status Badge -->
                              <div class="mt-2 flex flex-col items-center gap-2">
-                                <span :class="['text-4xl font-black tabular-nums', (currentMatchDetail.total_poin_yellow >= currentMatchDetail.total_poin_blue) ? 'text-black' : 'text-yellow-100']">
+                                <span :class="['text-4xl font-black tabular-nums', ((activeRoundRecap?.total_poin_yellow || 0) >= (activeRoundRecap?.total_poin_blue || 0)) ? 'text-black' : 'text-yellow-100']">
                                     {{ currentMatchDetail.weight_yellow }} KG
                                 </span>
-                                <Badge :class="[(currentMatchDetail.total_poin_yellow >= currentMatchDetail.total_poin_blue) ? 'bg-black text-yellow-400' : 'bg-yellow-500 text-black', 'uppercase font-bold tracking-widest pointer-events-none hover:bg-black']">
+                                <Badge :class="[((activeRoundRecap?.total_poin_yellow || 0) >= (activeRoundRecap?.total_poin_blue || 0)) ? 'bg-black text-yellow-400' : 'bg-yellow-500 text-black', 'uppercase font-bold tracking-widest pointer-events-none hover:bg-black']">
                                     {{ currentMatchDetail.weight_status_yellow }}
                                 </Badge>
                              </div>
 
                              <div class="mt-auto flex justify-center w-full">
-                                 <div :class="['text-[12rem] font-black drop-shadow-sm', (currentMatchDetail.total_poin_yellow >= currentMatchDetail.total_poin_blue) ? 'text-black' : 'text-yellow-500']">
-                                     {{ currentMatchDetail.total_poin_yellow }}
+                                 <div :class="['text-[12rem] font-black drop-shadow-sm', ((activeRoundRecap?.total_poin_yellow || 0) >= (activeRoundRecap?.total_poin_blue || 0)) ? 'text-black' : 'text-yellow-500']">
+                                     {{ activeRoundRecap?.total_poin_yellow || 0 }}
                                  </div>
                              </div>
                          </div>
@@ -505,29 +577,29 @@ onUnmounted(() => {
                          <!-- Blue Corner Card -->
                          <div :class="[
                                  'flex-1 flex flex-col items-center justify-center p-8 transition-colors duration-500 text-center gap-2 relative', 
-                                 (currentMatchDetail.total_poin_blue >= currentMatchDetail.total_poin_yellow) ? 'bg-blue-600' : 'bg-zinc-900 grayscale opacity-80'
+                                 ((activeRoundRecap?.total_poin_blue || 0) >= (activeRoundRecap?.total_poin_yellow || 0)) ? 'bg-blue-600' : 'bg-zinc-900 grayscale opacity-80'
                              ]">
                              
-                             <h2 :class="['font-black text-4xl mb-1 uppercase tracking-wider drop-shadow-sm', (currentMatchDetail.total_poin_blue >= currentMatchDetail.total_poin_yellow) ? 'text-white' : 'text-blue-400']">
+                             <h2 :class="['font-black text-4xl mb-1 uppercase tracking-wider drop-shadow-sm', ((activeRoundRecap?.total_poin_blue || 0) >= (activeRoundRecap?.total_poin_yellow || 0)) ? 'text-white' : 'text-blue-400']">
                                  {{ currentMatchDetail.atlete_blue || '-' }}
                              </h2>
-                             <p :class="['text-xl uppercase font-bold', (currentMatchDetail.total_poin_blue >= currentMatchDetail.total_poin_yellow) ? 'text-blue-100' : 'text-white']">
+                             <p :class="['text-xl uppercase font-bold', ((activeRoundRecap?.total_poin_blue || 0) >= (activeRoundRecap?.total_poin_yellow || 0)) ? 'text-blue-100' : 'text-white']">
                                  {{ currentMatchDetail.contingent_blue || '-' }}
                              </p>
                              
                              <!-- Weight and Status Badge -->
                              <div class="mt-2 flex flex-col items-center gap-2">
-                                <span :class="['text-4xl font-black tabular-nums', (currentMatchDetail.total_poin_blue >= currentMatchDetail.total_poin_yellow) ? 'text-white' : 'text-blue-100']">
+                                <span :class="['text-4xl font-black tabular-nums', ((activeRoundRecap?.total_poin_blue || 0) >= (activeRoundRecap?.total_poin_yellow || 0)) ? 'text-white' : 'text-blue-100']">
                                     {{ currentMatchDetail.weight_blue }} KG
                                 </span>
-                                <Badge :class="[(currentMatchDetail.total_poin_blue >= currentMatchDetail.total_poin_yellow) ? 'bg-black text-blue-400 hover:bg-black' : 'bg-blue-500 text-white hover:bg-blue-500', 'uppercase font-bold tracking-widest pointer-events-none']">
+                                <Badge :class="[((activeRoundRecap?.total_poin_blue || 0) >= (activeRoundRecap?.total_poin_yellow || 0)) ? 'bg-black text-blue-400 hover:bg-black' : 'bg-blue-500 text-white hover:bg-blue-500', 'uppercase font-bold tracking-widest pointer-events-none']">
                                     {{ currentMatchDetail.weight_status_blue }}
                                 </Badge>
                              </div>
 
                              <div class="mt-auto flex justify-center w-full">
-                                 <div :class="['text-[12rem] font-black drop-shadow-sm', (currentMatchDetail.total_poin_blue >= currentMatchDetail.total_poin_yellow) ? 'text-white' : 'text-blue-500']">
-                                     {{ currentMatchDetail.total_poin_blue }}
+                                 <div :class="['text-[12rem] font-black drop-shadow-sm', ((activeRoundRecap?.total_poin_blue || 0) >= (activeRoundRecap?.total_poin_yellow || 0)) ? 'text-white' : 'text-blue-500']">
+                                     {{ activeRoundRecap?.total_poin_blue || 0 }}
                                  </div>
                              </div>
                          </div>
@@ -603,7 +675,7 @@ onUnmounted(() => {
                          <Button v-if="['not_started', 'done'].includes(currentMatchDetail.status)" class="bg-blue-600 hover:bg-blue-700 text-white font-bold tracking-widest px-8" @click="setStatus('ongoing')">
                              START
                          </Button>
-                         <Button v-if="currentMatchDetail.status === 'ongoing'" class="bg-yellow-500 hover:bg-yellow-600 text-black font-bold tracking-widest px-8" @click="setStatus('paused')">
+                         <Button v-if="currentMatchDetail.status === 'ongoing'" class="bg-yellow-500 hover:bg-yellow-600 text-black font-bold tracking-widest px-8" @click="triggerPause()">
                              PAUSE
                          </Button>
                          <Button v-if="currentMatchDetail.status === 'paused'" class="bg-blue-600 hover:bg-blue-700 text-white font-bold tracking-widest px-8" @click="setStatus('ongoing')">
@@ -725,6 +797,58 @@ onUnmounted(() => {
                     <Button @click="syncMatch" :disabled="isSyncing">
                         <RefreshCw v-if="isSyncing" class="w-4 h-4 mr-2 animate-spin" />
                         Ya, Muat Data
+                    </Button>
+                </DialogFooter>
+            </DialogContent>
+        </Dialog>
+
+        <!-- Winner Selection Dialog -->
+        <Dialog :open="isWinnerDialogOpen" @update:open="isWinnerDialogOpen = $event">
+            <DialogContent class="sm:max-w-[400px]">
+                <DialogHeader class="pb-2 text-center flex flex-col items-center">
+                    <DialogTitle class="text-xl font-black uppercase text-primary tracking-widest">Pilih Pemenang Ronde</DialogTitle>
+                    <DialogDescription class="text-muted-foreground text-sm pt-2">
+                        Berdasarkan keputusan Pembantu Wasit di ronde ini, kami menyarankan:
+                    </DialogDescription>
+                    <Badge class="mt-3 text-sm font-black uppercase tracking-widest px-6 py-1.5"
+                           :class="[
+                               suggestedWinner === 'yellow' ? 'bg-yellow-500 text-black' :
+                               suggestedWinner === 'blue' ? 'bg-blue-600 text-white' :
+                               'bg-stone-500 text-white'
+                           ]">
+                        {{ suggestedWinner === 'yellow' ? 'Kuning' : suggestedWinner === 'blue' ? 'Biru' : 'Seri' }}
+                    </Badge>
+                </DialogHeader>
+
+                <div class="grid grid-cols-3 gap-3 py-4">
+                    <div @click="selectedRoundWinner = 'yellow'" 
+                         :class="['cursor-pointer border-2 rounded-xl flex flex-col items-center justify-center p-4 transition-all', selectedRoundWinner === 'yellow' ? 'border-yellow-500 bg-yellow-500/20' : 'border-stone-800 hover:border-yellow-500/50']">
+                         <div :class="['w-4 h-4 rounded-full border mb-2 flex items-center justify-center', selectedRoundWinner === 'yellow' ? 'border-yellow-500 bg-yellow-500/20' : 'border-stone-600']">
+                             <div v-if="selectedRoundWinner === 'yellow'" class="w-2 h-2 rounded-full bg-yellow-500"></div>
+                         </div>
+                         <span class="font-bold text-yellow-500">Kuning</span>
+                    </div>
+
+                    <div @click="selectedRoundWinner = 'draw'" 
+                         :class="['cursor-pointer border-2 rounded-xl flex flex-col items-center justify-center p-4 transition-all', selectedRoundWinner === 'draw' ? 'border-stone-400 bg-stone-500/20' : 'border-stone-800 hover:border-stone-500/50']">
+                         <div :class="['w-4 h-4 rounded-full border mb-2 flex items-center justify-center', selectedRoundWinner === 'draw' ? 'border-stone-400 bg-stone-500/20' : 'border-stone-600']">
+                             <div v-if="selectedRoundWinner === 'draw'" class="w-2 h-2 rounded-full bg-stone-400"></div>
+                         </div>
+                         <span class="font-bold text-stone-300">Seri</span>
+                    </div>
+
+                    <div @click="selectedRoundWinner = 'blue'" 
+                         :class="['cursor-pointer border-2 rounded-xl flex flex-col items-center justify-center p-4 transition-all', selectedRoundWinner === 'blue' ? 'border-blue-500 bg-blue-600/20' : 'border-stone-800 hover:border-blue-500/50']">
+                         <div :class="['w-4 h-4 rounded-full border mb-2 flex items-center justify-center', selectedRoundWinner === 'blue' ? 'border-blue-500 bg-blue-600/20' : 'border-stone-600']">
+                             <div v-if="selectedRoundWinner === 'blue'" class="w-2 h-2 rounded-full bg-blue-500"></div>
+                         </div>
+                         <span class="font-bold text-blue-400">Biru</span>
+                    </div>
+                </div>
+
+                <DialogFooter class="pt-2">
+                    <Button @click="saveRoundWinner" class="w-full font-black uppercase tracking-widest" :disabled="isSavingWinner">
+                        {{ isSavingWinner ? 'Menyimpan...' : 'Simpan Pemenang' }}
                     </Button>
                 </DialogFooter>
             </DialogContent>

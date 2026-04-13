@@ -30,8 +30,6 @@ return new class extends Migration
             $table->integer('weight_blue')->nullable();
             $table->string('weight_status_yellow')->nullable();
             $table->string('weight_status_blue')->nullable();
-            $table->integer('total_poin_yellow')->default(0);
-            $table->integer('total_poin_blue')->default(0);
             $table->integer('round_number')->default(1);
             $table->string('winner_status')->nullable();
             $table->timestamps();

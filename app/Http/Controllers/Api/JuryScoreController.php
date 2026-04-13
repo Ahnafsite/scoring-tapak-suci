@@ -81,15 +81,13 @@ class JuryScoreController extends Controller
 
             $this->updateRecapWinner($recap, $juryWord, $validated['round_number'], $validated['jury_number']);
 
+            $recap->total_poin_yellow = $this->calculateSecretaryValidatedTotal('yellow', $validated['round_number']);
+            $recap->total_poin_blue = $this->calculateSecretaryValidatedTotal('blue', $validated['round_number']);
             $recap->save();
 
-            // 3. Re-calculate Match's Total System Score and Update FightMatch
+            // 3. Broadcast ActiveMatch updated (Since no fields changed directly in Match, this just signals UI refresh if needed)
             $match = FightMatch::find($validated['partai_id']);
             if ($match) {
-                $match->update([
-                    'total_poin_yellow' => $this->calculateSecretaryValidatedTotal('yellow'),
-                    'total_poin_blue' => $this->calculateSecretaryValidatedTotal('blue'),
-                ]);
                 broadcast(new ActiveMatchUpdated($match))->toOthers();
             }
 
@@ -168,15 +166,13 @@ class JuryScoreController extends Controller
 
             $this->updateRecapWinner($recap, $juryWord, $validated['round_number'], $validated['jury_number']);
 
+            $recap->total_poin_yellow = $this->calculateSecretaryValidatedTotal('yellow', $validated['round_number']);
+            $recap->total_poin_blue = $this->calculateSecretaryValidatedTotal('blue', $validated['round_number']);
             $recap->save();
 
-            // Re-calculate Match's Total System Score and Update FightMatch
+            // Re-calculate Match's Total System Score - no longer applies to match, so we just trigger active match refreshed
             $match = FightMatch::find($validated['partai_id']);
             if ($match) {
-                $match->update([
-                    'total_poin_yellow' => $this->calculateSecretaryValidatedTotal('yellow'),
-                    'total_poin_blue' => $this->calculateSecretaryValidatedTotal('blue'),
-                ]);
                 broadcast(new ActiveMatchUpdated($match))->toOthers();
             }
 
@@ -245,70 +241,77 @@ class JuryScoreController extends Controller
      * Calculates the validated total points for a given corner across all rounds.
      * The rule requires identical score inputs by at least 3 juries at the exact chronological insertion index.
      */
-    private function calculateSecretaryValidatedTotal($corner)
+    public function calculateSecretaryValidatedTotal($corner, $roundNumber)
     {
         $totalValidated = 0;
 
-        // Loop over rounds 1 to 3
-        for ($round = 1; $round <= 3; $round++) {
-            $juryInputs = [1 => [], 2 => [], 3 => [], 4 => []];
+        $juryInputs = [1 => [], 2 => [], 3 => [], 4 => []];
 
-            if ($corner === 'yellow') {
-                $details = FightDetailJuryPointYellow::where('round_number', $round)
-                    ->orderBy('id', 'asc')
-                    ->with(['score', 'punishment'])
-                    ->get();
-            } else {
-                $details = FightDetailJuryPointBlue::where('round_number', $round)
-                    ->orderBy('id', 'asc')
-                    ->with(['score', 'punishment'])
-                    ->get();
+        if ($corner === 'yellow') {
+            $details = FightDetailJuryPointYellow::where('round_number', $roundNumber)
+                ->orderBy('id', 'asc')
+                ->with(['score', 'punishment'])
+                ->get();
+        } else {
+            $details = FightDetailJuryPointBlue::where('round_number', $roundNumber)
+                ->orderBy('id', 'asc')
+                ->with(['score', 'punishment'])
+                ->get();
+        }
+
+        // We will tally frequencies of specific identifiers for each jury independently
+        $juryPointCounts = [1 => [], 2 => [], 3 => [], 4 => []];
+        $pointValues = [];
+
+        // Distribute into 4 jury frequency maps
+        foreach ($details as $detail) {
+            $jn = $detail->jury_number;
+            if ($jn >= 1 && $jn <= 4) {
+                $identifier = $detail->ref_score_id ? "s:{$detail->ref_score_id}" : "p:{$detail->ref_punishment_id}";
+                
+                $val = 0;
+                if ($detail->ref_score_id && $detail->score) {
+                    $val = $detail->score->score;
+                } elseif ($detail->ref_punishment_id && $detail->punishment) {
+                    $val = -$detail->punishment->score; // Subtract punishment points
+                }
+                
+                if (!isset($juryPointCounts[$jn][$identifier])) {
+                    $juryPointCounts[$jn][$identifier] = 0;
+                }
+                $juryPointCounts[$jn][$identifier]++;
+                
+                $pointValues[$identifier] = $val;
             }
+        }
 
-            // Distribute into 4 jury arrays based on insertion history order
-            foreach ($details as $detail) {
-                $jn = $detail->jury_number;
-                if ($jn >= 1 && $jn <= 4) {
-                    $identifier = $detail->ref_score_id ? "s:{$detail->ref_score_id}" : "p:{$detail->ref_punishment_id}";
-                    
-                    $val = 0;
-                    if ($detail->ref_score_id && $detail->score) {
-                        $val = $detail->score->score;
-                    } elseif ($detail->ref_punishment_id && $detail->punishment) {
-                        $val = -$detail->punishment->score; // Subtract punishment points
-                    }
-                    
-                    $juryInputs[$jn][] = [
-                        'id' => $identifier,
-                        'val' => $val
-                    ];
+        // Tally overlapping values: A point validates if >=3 juries inputted it at least X times
+        foreach ($pointValues as $id => $val) {
+            // Find the maximum occurrences of this identifier by any single jury
+            $maxOccurrences = 0;
+            for ($j = 1; $j <= 4; $j++) {
+                $count = $juryPointCounts[$j][$id] ?? 0;
+                if ($count > $maxOccurrences) {
+                    $maxOccurrences = $count;
                 }
             }
 
-            // Evaluate dynamically index-by-index
-            $maxLen = max(count($juryInputs[1]), count($juryInputs[2]), count($juryInputs[3]), count($juryInputs[4]));
-            for ($i = 0; $i < $maxLen; $i++) {
-                $freq = [];
-                $valueMap = [];
-                
+            // Loop per occurrence up to the max boundary
+            for ($k = 1; $k <= $maxOccurrences; $k++) {
+                $matchingJuries = 0;
+                // How many juries submitted this specific type of point at least K times?
                 for ($j = 1; $j <= 4; $j++) {
-                    if (isset($juryInputs[$j][$i])) {
-                        $item = $juryInputs[$j][$i];
-                        $id = $item['id'];
-                        if (!isset($freq[$id])) {
-                            $freq[$id] = 0;
-                            $valueMap[$id] = $item['val'];
-                        }
-                        $freq[$id]++;
+                    $count = $juryPointCounts[$j][$id] ?? 0;
+                    if ($count >= $k) {
+                        $matchingJuries++;
                     }
                 }
                 
-                // If any button was identically pressed by >=3 juries at this chronological step
-                foreach ($freq as $id => $count) {
-                    if ($count >= 3) {
-                        $totalValidated += $valueMap[$id];
-                        break; 
-                    }
+                if ($matchingJuries >= 3) {
+                    $totalValidated += $val;
+                } else {
+                    // If we didn't hit 3 matches at iteration K, we won't hit it at K+1
+                    break;
                 }
             }
         }

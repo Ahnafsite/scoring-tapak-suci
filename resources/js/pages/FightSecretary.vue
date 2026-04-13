@@ -56,18 +56,19 @@ onMounted(() => {
 
         echoScoreChannel = echo.channel('match.score')
             .listen('.JuryScoreUpdated', (e: any) => {
-                if (e.detail) {
-                    if (e.detail.deleted) {
+                if (e.scoreDetail) {
+                    if (e.scoreDetail.deleted) {
+                        const targetId = Number(e.scoreDetail.id);
                         if (e.corner === 'yellow') {
-                            localYellowPoints.value = localYellowPoints.value.filter(p => p.id !== e.detail.id);
+                            localYellowPoints.value = localYellowPoints.value.filter(p => p.id !== targetId);
                         } else {
-                            localBluePoints.value = localBluePoints.value.filter(p => p.id !== e.detail.id);
+                            localBluePoints.value = localBluePoints.value.filter(p => p.id !== targetId);
                         }
                     } else {
                         if (e.corner === 'yellow') {
-                            localYellowPoints.value.push(e.detail);
+                            localYellowPoints.value.push(e.scoreDetail);
                         } else {
-                            localBluePoints.value.push(e.detail);
+                            localBluePoints.value.push(e.scoreDetail);
                         }
                     }
                 }
@@ -75,7 +76,7 @@ onMounted(() => {
                 if (e.recap) {
                     const idx = localRecapPoints.value.findIndex(r => r.round_number === e.recap.round_number);
                     if (idx !== -1) {
-                        localRecapPoints.value[idx] = e.recap;
+                        localRecapPoints.value.splice(idx, 1, e.recap);
                     } else {
                         localRecapPoints.value.push(e.recap);
                     }
@@ -96,53 +97,42 @@ onUnmounted(() => {
     }
 });
 
-// Front-end utility to visually derive valid matching items 
-const getValidatedPoints = (detailsList: any[], roundNumber: number) => {
-    const points = detailsList.filter((p: any) => p.round_number === roundNumber);
-    const juries: any = { 1: [], 2: [], 3: [], 4: [] };
-    points.forEach((p: any) => {
-        if (p.jury_number >= 1 && p.jury_number <= 4) {
-            juries[p.jury_number].push(p);
-        }
-    });
-
-    const maxLen = Math.max(juries[1].length, juries[2].length, juries[3].length, juries[4].length);
-    const validItems = [];
-
-    for (let i = 0; i < maxLen; i++) {
-        const freq: any = {};
-        const itemMap: any = {};
-
-        for (let j = 1; j <= 4; j++) {
-            const item = juries[j][i];
-            if (item) {
-                const identifier = item.ref_score_id ? `s:${item.ref_score_id}` : `p:${item.ref_punishment_id}`;
-                if (!freq[identifier]) {
-                    freq[identifier] = 0;
-                    itemMap[identifier] = item;
-                }
-                freq[identifier]++;
-            }
-        }
-
-        for (const [id, count] of Object.entries(freq)) {
-            if ((count as number) >= 3) {
-                validItems.push(itemMap[id]);
-                break;
-            }
-        }
-    }
-    return validItems;
-};
-
-const activeRoundValidatedYellow = computed(() => {
+const activeRoundJuriesData = computed(() => {
     if (!currentMatch.value) return [];
-    return getValidatedPoints(localYellowPoints.value, currentMatch.value.round_number);
+    
+    const roundNumber = currentMatch.value.round_number;
+    const roundDetails = localRecapPoints.value.find(r => r.round_number === roundNumber);
+    const jNumMap: Record<number, string> = { 1: 'one', 2: 'two', 3: 'three', 4: 'four' };
+    
+    return [1, 2, 3, 4].map(juryNumber => {
+        const yDetails = localYellowPoints.value.filter(
+            p => p.jury_number === juryNumber && p.round_number === roundNumber
+        );
+        const bDetails = localBluePoints.value.filter(
+            p => p.jury_number === juryNumber && p.round_number === roundNumber
+        );
+        
+        let yTotal = 0;
+        let bTotal = 0;
+        if (roundDetails) {
+            const word = jNumMap[juryNumber];
+            yTotal = roundDetails[`jury_${word}_total_poin_yellow`] ?? 0;
+            bTotal = roundDetails[`jury_${word}_total_poin_blue`] ?? 0;
+        }
+        
+        return {
+            jury_name: `PW ${juryNumber}`,
+            yellow_details: yDetails,
+            yellow_total: yTotal,
+            blue_details: bDetails,
+            blue_total: bTotal
+        };
+    });
 });
 
-const activeRoundValidatedBlue = computed(() => {
-    if (!currentMatch.value) return [];
-    return getValidatedPoints(localBluePoints.value, currentMatch.value.round_number);
+const activeRoundRecap = computed(() => {
+    if (!currentMatch.value) return null;
+    return localRecapPoints.value.find(r => r.round_number === currentMatch.value.round_number);
 });
 </script>
 
@@ -185,27 +175,58 @@ const activeRoundValidatedBlue = computed(() => {
                 </div>
 
                 <!-- Main Header (Athlete VS Athlete) -->
-                <div class="h-28 shrink-0 w-full flex z-10 shadow-xl border-b border-stone-800">
-                    <div class="flex-1 bg-gradient-to-r from-yellow-500 to-yellow-400 flex flex-col items-end justify-center px-10 relative overflow-hidden text-right shadow-[inset_0_0_50px_rgba(0,0,0,0.1)]">
-                        <h2 class="text-3xl font-black text-black uppercase tracking-wider mb-2 drop-shadow-sm truncate w-full">
-                            {{ currentMatch?.atlete_yellow || currentMatch?.athlete_yellow || '-' }}
-                        </h2>
-                        <Badge class="bg-black text-yellow-400 hover:bg-black uppercase font-bold tracking-widest text-[10px]">
-                            {{ currentMatch?.contingent_yellow || '-' }}
-                        </Badge>
+                <div class="h-32 shrink-0 w-full flex z-10 shadow-xl border-b border-stone-800">
+                    <!-- Blue Section -->
+                    <div class="flex-1 bg-gradient-to-r from-blue-700 to-blue-600 flex items-center justify-between px-10 relative overflow-hidden shadow-[inset_0_0_50px_rgba(0,0,0,0.2)]">
+                        <div class="flex flex-col items-start text-left max-w-[70%]">
+                            <h2 class="text-3xl font-black text-white uppercase tracking-wider mb-2 drop-shadow-sm truncate w-full">
+                                {{ currentMatch?.atlete_blue || currentMatch?.athlete_blue || '-' }}
+                            </h2>
+                            <div class="flex items-center gap-2 flex-wrap">
+                                <Badge class="bg-blue-950 text-blue-100 hover:bg-blue-950 uppercase font-bold tracking-widest text-[10px]">
+                                    {{ currentMatch?.contingent_blue || '-' }}
+                                </Badge>
+                                <Badge class="bg-black text-blue-400 uppercase font-black tracking-widest text-[10px] pointer-events-none px-2 py-0.5 shadow-md border-none">
+                                    {{ currentMatch?.weight_status_blue || '-' }} {{ currentMatch?.weight_blue ? `- ${currentMatch.weight_blue} KG` : '' }}
+                                </Badge>
+                            </div>
+                        </div>
+                        <div class="text-[5.5rem] font-black text-white leading-none drop-shadow-md tabular-nums pt-1">
+                            {{ activeRoundRecap?.total_poin_blue || 0 }}
+                        </div>
                     </div>
 
-                    <div class="w-24 bg-zinc-950 flex shadow-[0_0_30px_rgba(0,0,0,0.5)] items-center justify-center shrink-0 border-x border-stone-800 z-20 relative text-stone-600 font-black italic text-2xl skew-x-[-10deg]">
-                        <span class="skew-x-[10deg]">VS</span>
+                    <!-- Center Round / VS -->
+                    <div class="w-32 bg-zinc-950 flex flex-col shadow-[0_0_30px_rgba(0,0,0,0.5)] items-center justify-center shrink-0 border-x border-stone-800 z-20 relative text-stone-600 font-black italic skew-x-[-10deg]">
+                        <div class="skew-x-[10deg] flex flex-col items-center justify-center">
+                            <template v-if="matchStatus === 'ongoing_paused'">
+                                <span class="text-[10px] text-stone-500 font-black uppercase tracking-widest mb-1 not-italic">Ronde</span>
+                                <span class="text-5xl font-black text-white leading-none not-italic">{{ currentMatch?.round_number }}</span>
+                            </template>
+                            <template v-else>
+                                <span class="text-3xl">VS</span>
+                            </template>
+                        </div>
                     </div>
 
-                    <div class="flex-1 bg-gradient-to-l from-blue-700 to-blue-600 flex flex-col items-start justify-center px-10 relative overflow-hidden text-left shadow-[inset_0_0_50px_rgba(0,0,0,0.2)]">
-                        <h2 class="text-3xl font-black text-white uppercase tracking-wider mb-2 drop-shadow-sm truncate w-full">
-                            {{ currentMatch?.atlete_blue || currentMatch?.athlete_blue || '-' }}
-                        </h2>
-                        <Badge class="bg-blue-950 text-blue-100 hover:bg-blue-950 uppercase font-bold tracking-widest text-[10px]">
-                            {{ currentMatch?.contingent_blue || '-' }}
-                        </Badge>
+                    <!-- Yellow Section -->
+                    <div class="flex-1 bg-gradient-to-l from-yellow-500 to-yellow-400 flex items-center justify-between px-10 relative overflow-hidden shadow-[inset_0_0_50px_rgba(0,0,0,0.1)]">
+                        <div class="text-[5.5rem] font-black text-black leading-none drop-shadow-md tabular-nums pt-1">
+                            {{ activeRoundRecap?.total_poin_yellow || 0 }}
+                        </div>
+                        <div class="flex flex-col items-end text-right max-w-[70%]">
+                            <h2 class="text-3xl font-black text-black uppercase tracking-wider mb-2 drop-shadow-sm truncate w-full">
+                                {{ currentMatch?.atlete_yellow || currentMatch?.athlete_yellow || '-' }}
+                            </h2>
+                            <div class="flex items-center justify-end gap-2 flex-wrap">
+                                <Badge class="bg-black text-yellow-500 uppercase font-black tracking-widest text-[10px] pointer-events-none px-2 py-0.5 shadow-md border-none">
+                                    {{ currentMatch?.weight_yellow ? `${currentMatch.weight_yellow} KG -` : '' }} {{ currentMatch?.weight_status_yellow || '-' }}
+                                </Badge>
+                                <Badge class="bg-black text-yellow-400 hover:bg-black uppercase font-bold tracking-widest text-[10px]">
+                                    {{ currentMatch?.contingent_yellow || '-' }}
+                                </Badge>
+                            </div>
+                        </div>
                     </div>
                 </div>
 
@@ -214,70 +235,63 @@ const activeRoundValidatedBlue = computed(() => {
                     
                     <template v-if="matchStatus === 'ongoing_paused'">
                         <!-- ONGOING SCORING LAYOUT -->
-                        <div class="flex flex-1 rounded-2xl overflow-hidden shadow-2xl border border-stone-800 relative z-10 w-full mb-6">
-                            
-                            <!-- Yellow Corner Details -->
-                            <div class="flex-[3] flex flex-col relative transition-colors duration-500 bg-yellow-400">
-                                <div class="px-8 py-6 w-full flex items-center justify-between z-10">
-                                     <span class="text-3xl font-black tabular-nums text-black drop-shadow-sm">
-                                         {{ currentMatch?.weight_yellow }} KG
-                                     </span>
-                                     <Badge class="bg-black text-yellow-500 uppercase font-black tracking-widest text-lg pointer-events-none px-4 py-1">
-                                         {{ currentMatch?.weight_status_yellow || '-' }}
-                                     </Badge>
-                                </div>
+                        <div class="flex flex-col gap-6 flex-1 w-full relative z-10 pb-6 mb-2">
 
-                                <div class="flex-1 flex flex-col items-center justify-center -mt-8 gap-1">
-                                    <h3 class="text-black/50 font-bold uppercase tracking-widest text-sm mb-[-1.5rem] z-10">Total Nilai Otomatis</h3>
-                                    <div class="text-[12rem] font-black text-black leading-none drop-shadow-md">
-                                        {{ currentMatch?.total_poin_yellow || 0 }}
-                                    </div>
+                            <!-- Real-time Valid Sequences -->
+                            <div class="flex-1 flex flex-col">
+                                <div class="grid grid-cols-[1fr_80px_100px_80px_1fr] gap-6 mb-4 text-center text-[11px] font-black uppercase tracking-widest text-muted-foreground w-full shrink-0">
+                                    <div class="text-left pl-2">Detail Nilai</div>
+                                    <div>Total</div>
+                                    <div>Ronde {{ currentMatch?.round_number }}</div>
+                                    <div>Total</div>
+                                    <div class="text-right pr-2">Detail Nilai</div>
                                 </div>
-                            </div>
-
-                            <!-- Real-Time Valid Sequence -->
-                            <div class="w-80 bg-zinc-950 border-x border-stone-800 shadow-2xl flex flex-col z-20 shrink-0">
-                                <div class="shrink-0 pt-4 pb-2 text-center text-[10px] text-stone-500 font-black uppercase tracking-widest border-b border-stone-800">
-                                    Ronde {{ currentMatch?.round_number }} - Rincian Tersahkan
-                                </div>
-                                <div class="flex-1 flex w-full">
-                                    <!-- Yellow sequences -->
-                                    <div class="w-1/2 h-full border-r border-stone-800 p-3 flex flex-col gap-2 overflow-y-auto custom-scrollbar">
-                                        <div v-for="(p, i) in activeRoundValidatedYellow" :key="'y'+i" 
-                                             class="bg-yellow-400/20 border border-yellow-500/50 text-yellow-400 text-center rounded-md py-1.5 font-bold text-sm tracking-wider">
-                                             <span v-if="p.ref_score_id" class="">{{ p.score?.name }}</span>
-                                             <span v-else-if="p.ref_punishment_id" class="text-red-400">{{ p.punishment?.name }}</span>
+                                
+                                <div class="flex flex-col gap-4 overflow-y-auto custom-scrollbar pr-2 pb-2 flex-1">
+                                    <div v-for="(jury, idx) in activeRoundJuriesData" :key="idx" 
+                                         class="grid grid-cols-[1fr_80px_100px_80px_1fr] gap-6 items-stretch min-h-[4.5rem]">
+                                        
+                                        <!-- Blue Nilai -->
+                                        <div class="bg-zinc-800 border-[1.5px] border-blue-600/40 rounded-md px-4 py-2 flex flex-wrap content-center gap-1.5 overflow-hidden">
+                                            <template v-for="(p, i) in jury.blue_details" :key="'bn'+i">
+                                                <span v-if="p.ref_score_id" class="text-white text-[1.1rem] font-bold leading-none">{{ p.score?.name }},</span>
+                                                <span v-else-if="p.ref_punishment_id" class="text-red-500 text-[1.1rem] font-bold leading-none">{{ p.punishment?.name }},</span>
+                                            </template>
                                         </div>
-                                    </div>
-                                    <!-- Blue sequences -->
-                                    <div class="w-1/2 h-full p-3 flex flex-col gap-2 overflow-y-auto custom-scrollbar">
-                                        <div v-for="(p, i) in activeRoundValidatedBlue" :key="'b'+i" 
-                                             class="bg-blue-600/20 border border-blue-500/50 text-blue-400 text-center rounded-md py-1.5 font-bold text-sm tracking-wider">
-                                             <span v-if="p.ref_score_id" class="">{{ p.score?.name }}</span>
-                                             <span v-else-if="p.ref_punishment_id" class="text-red-400">{{ p.punishment?.name }}</span>
+                                        
+                                        <!-- Blue Total -->
+                                        <div :class="[
+                                            'flex items-center justify-center rounded-md border-[1.5px] font-black text-2xl tabular-nums tracking-tighter', 
+                                            jury.blue_total > 200 ? 'bg-red-600 border-red-500 text-white' : 'bg-zinc-800/80 border-blue-600/40 text-white'
+                                        ]">
+                                            {{ jury.blue_total }}
                                         </div>
+                                        
+                                        <!-- PW Name -->
+                                        <div class="flex items-center justify-center font-black text-sm rounded-md bg-zinc-800 border-[1px] border-stone-700 text-stone-300 drop-shadow-sm uppercase tracking-wider">
+                                            {{ jury.jury_name }}
+                                        </div>
+                                        
+                                        <!-- Yellow Total -->
+                                        <div :class="[
+                                            'flex items-center justify-center rounded-md border-[1.5px] font-black text-2xl tabular-nums tracking-tighter', 
+                                            jury.yellow_total > 200 ? 'bg-red-600 border-red-500 text-white' : 'bg-zinc-800/80 border-yellow-500/40 text-white'
+                                        ]">
+                                            {{ jury.yellow_total }}
+                                        </div>
+                                        
+                                        <!-- Yellow Nilai -->
+                                        <div class="bg-zinc-800 border-[1.5px] border-yellow-500/40 rounded-md px-4 py-2 flex flex-wrap content-center gap-1.5 justify-end overflow-hidden">
+                                            <template v-for="(p, i) in jury.yellow_details" :key="'yn'+i">
+                                                <span v-if="p.ref_score_id" class="text-white text-[1.1rem] font-bold leading-none">{{ p.score?.name }},</span>
+                                                <span v-else-if="p.ref_punishment_id" class="text-red-500 text-[1.1rem] font-bold leading-none">{{ p.punishment?.name }},</span>
+                                            </template>
+                                        </div>
+                                        
                                     </div>
                                 </div>
                             </div>
 
-                            <!-- Blue Corner Details -->
-                            <div class="flex-[3] flex flex-col relative transition-colors duration-500 bg-blue-600">
-                                <div class="px-8 py-6 w-full flex items-center justify-between z-10">
-                                     <Badge class="bg-black text-blue-400 hover:bg-black uppercase font-black tracking-widest text-lg pointer-events-none px-4 py-1">
-                                         {{ currentMatch?.weight_status_blue || '-' }}
-                                     </Badge>
-                                     <span class="text-3xl font-black tabular-nums text-white drop-shadow-sm">
-                                         {{ currentMatch?.weight_blue }} KG
-                                     </span>
-                                </div>
-
-                                <div class="flex-1 flex flex-col items-center justify-center -mt-8 gap-1">
-                                    <h3 class="text-white/50 font-bold uppercase tracking-widest text-sm mb-[-1.5rem] z-10">Total Nilai Otomatis</h3>
-                                    <div class="text-[12rem] font-black text-white leading-none drop-shadow-md">
-                                        {{ currentMatch?.total_poin_blue || 0 }}
-                                    </div>
-                                </div>
-                            </div>
                         </div>
                     </template>
                     
@@ -287,13 +301,13 @@ const activeRoundValidatedBlue = computed(() => {
                             <h2 class="text-3xl text-zinc-500 font-bold uppercase mb-4 tracking-widest">Pertandingan Selesai</h2>
                             <div class="flex items-center gap-12 bg-zinc-900 border border-stone-800 p-8 rounded-2xl shadow-xl w-full max-w-4xl">
                                 <div class="flex-1 text-right">
-                                    <h3 class="text-5xl font-black text-yellow-500 mb-2">{{ currentMatch?.total_poin_yellow }}</h3>
-                                    <span class="uppercase tracking-widest text-sm text-muted-foreground font-bold">{{ currentMatch?.atlete_yellow }}</span>
+                                    <h3 class="text-5xl font-black text-blue-500 mb-2">{{ activeRoundRecap?.total_poin_blue || 0 }}</h3>
+                                    <span class="uppercase tracking-widest text-sm text-muted-foreground font-bold">{{ currentMatch?.atlete_blue }}</span>
                                 </div>
                                 <div class="text-bold text-stone-600 italic text-2xl skew-x-[-10deg]">VS</div>
                                 <div class="flex-1 text-left">
-                                    <h3 class="text-5xl font-black text-blue-500 mb-2">{{ currentMatch?.total_poin_blue }}</h3>
-                                    <span class="uppercase tracking-widest text-sm text-muted-foreground font-bold">{{ currentMatch?.atlete_blue }}</span>
+                                    <h3 class="text-5xl font-black text-yellow-500 mb-2">{{ activeRoundRecap?.total_poin_yellow || 0 }}</h3>
+                                    <span class="uppercase tracking-widest text-sm text-muted-foreground font-bold">{{ currentMatch?.atlete_yellow }}</span>
                                 </div>
                             </div>
                         </div>

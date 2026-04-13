@@ -25,6 +25,8 @@ return new class extends Migration {
             $table->string('jury_two_winner')->nullable();
             $table->string('jury_three_winner')->nullable();
             $table->string('jury_four_winner')->nullable();
+            $table->integer('total_poin_yellow')->default(0);
+            $table->integer('total_poin_blue')->default(0);
             $table->string('winner')->nullable();
             $table->timestamps();
         });

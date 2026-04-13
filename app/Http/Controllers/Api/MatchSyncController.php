@@ -53,6 +53,28 @@ class MatchSyncController extends Controller
         return response()->json(['success' => true, 'data' => $match]);
     }
 
+    public function updateRoundWinner(Request $request)
+    {
+        $validated = $request->validate([
+            'round_number' => 'required|integer|min:1|max:3',
+            'winner' => 'required|in:yellow,blue,draw',
+        ]);
+
+        $recap = FightRecapJuryPoint::firstOrCreate(
+            ['round_number' => $validated['round_number']],
+            [
+                'jury_one_total_poin_blue' => 0, 'jury_one_total_poin_yellow' => 0,
+                'jury_two_total_poin_blue' => 0, 'jury_two_total_poin_yellow' => 0,
+                'jury_three_total_poin_blue' => 0, 'jury_three_total_poin_yellow' => 0,
+                'jury_four_total_poin_blue' => 0, 'jury_four_total_poin_yellow' => 0,
+            ]
+        );
+
+        $recap->update(['winner' => $validated['winner']]);
+
+        return response()->json(['success' => true, 'data' => $recap]);
+    }
+
     public function syncMatch(Request $request, $partai_id)
     {
         $apiUrl = rtrim(env('API_URL'), '/');
@@ -110,8 +132,6 @@ class MatchSyncController extends Controller
                 'category' => $data['category'],
                 'group' => $data['group'],
                 'status' => $data['status'],
-                'total_poin_yellow' => (int) ($data['total_poin_yellow'] ?? 0),
-                'total_poin_blue' => (int) ($data['total_poin_blue'] ?? 0),
                 'round_number' => $data['round_number'] ?? 1,
                 'winner_corner' => $data['winner_corner'] ?? null,
                 'winner_status' => $data['winner_status'] ?? null,
@@ -209,6 +229,16 @@ class MatchSyncController extends Controller
                         }
                     }
                 }
+            }
+
+            $juryController = new \App\Http\Controllers\Api\JuryScoreController();
+            foreach ($roundsMap as $rKey => $rNum) {
+                 $rObj = FightRecapJuryPoint::where('round_number', $rNum)->first();
+                 if ($rObj) {
+                     $rObj->total_poin_yellow = $juryController->calculateSecretaryValidatedTotal('yellow', $rNum);
+                     $rObj->total_poin_blue = $juryController->calculateSecretaryValidatedTotal('blue', $rNum);
+                     $rObj->save();
+                 }
             }
 
             DB::commit();

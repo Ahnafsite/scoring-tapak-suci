@@ -76,35 +76,23 @@ const roundsData = computed(() => {
 });
 
 const computedWinner = computed(() => {
-    const overallY = roundsData.value.reduce((acc, r) => acc + r.yellow_total, 0);
-    const overallB = roundsData.value.reduce((acc, r) => acc + r.blue_total, 0);
+    if (!currentMatch.value) return { status: 'draw', text: 'Seri' };
+    
+    const roundNumber = currentMatch.value.round_number;
+    const recap = localRecapPoints.value.find(r => r.round_number === roundNumber);
+    if (!recap) return { status: 'draw', text: 'Seri' };
 
-    if (overallY > overallB) {
-        return { status: 'yellow', text: 'Pemenang Sudut Kuning' };
-    } else if (overallB > overallY) {
-        return { status: 'blue', text: 'Pemenang Sudut Biru' };
+    const jNumMap: Record<number, string> = { 1: 'one', 2: 'two', 3: 'three', 4: 'four' };
+    const word = jNumMap[juryNumber.value] || 'one';
+    
+    const statusWinner = recap[`jury_${word}_winner`] || 'draw';
+    
+    if (statusWinner === 'yellow') {
+        return { status: 'yellow', text: 'Pemenang Sudut Kuning Ronde Ini' };
+    } else if (statusWinner === 'blue') {
+        return { status: 'blue', text: 'Pemenang Sudut Biru Ronde Ini' };
     } else {
-        const yPunish = localYellowPoints.value.reduce((acc, p) => {
-            if (p.jury_number === juryNumber.value && p.ref_punishment_id) {
-                return acc + (p.punishment?.score || 0);
-            }
-            return acc;
-        }, 0);
-        
-        const bPunish = localBluePoints.value.reduce((acc, p) => {
-            if (p.jury_number === juryNumber.value && p.ref_punishment_id) {
-                return acc + (p.punishment?.score || 0);
-            }
-            return acc;
-        }, 0);
-
-        if (yPunish > bPunish) {
-            return { status: 'blue_pelanggaran', text: 'Pemenang Sudut Biru, karena pelanggaran' };
-        } else if (bPunish > yPunish) {
-            return { status: 'yellow_pelanggaran', text: 'Pemenang Sudut Kuning, karena pelanggaran' };
-        } else {
-            return { status: 'draw', text: 'Seri' };
-        }
+        return { status: 'draw', text: 'Seri' };
     }
 });
 
