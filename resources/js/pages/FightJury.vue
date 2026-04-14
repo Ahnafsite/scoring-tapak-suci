@@ -356,10 +356,10 @@ onUnmounted(() => {
                             <Delete class="w-8 h-8 stroke-[3]" />
                         </button>
 
-                        <button @click="submitScore('yellow', 'punishment', 4)" class="bg-yellow-400 hover:bg-yellow-500 text-black font-black text-2xl rounded-md transition-colors flex items-center justify-center">-10</button>
-                        <button @click="submitScore('yellow', 'punishment', 1)" class="bg-yellow-400 hover:bg-yellow-500 text-black font-black text-2xl rounded-md transition-colors flex items-center justify-center">-20</button>
-                        <button @click="submitScore('yellow', 'punishment', 2)" class="bg-yellow-400 hover:bg-yellow-500 text-black font-black text-2xl rounded-md transition-colors flex items-center justify-center">-30</button>
-                        <button @click="submitScore('yellow', 'punishment', 3)" class="bg-yellow-400 hover:bg-yellow-500 text-black font-black text-2xl rounded-md transition-colors flex items-center justify-center">-40</button>
+                        <button @click="submitScore('yellow', 'punishment', 1)" class="bg-yellow-400 hover:bg-yellow-500 text-black font-black text-2xl rounded-md transition-colors flex items-center justify-center">-10</button>
+                        <button @click="submitScore('yellow', 'punishment', 2)" class="bg-yellow-400 hover:bg-yellow-500 text-black font-black text-2xl rounded-md transition-colors flex items-center justify-center">-20</button>
+                        <button @click="submitScore('yellow', 'punishment', 3)" class="bg-yellow-400 hover:bg-yellow-500 text-black font-black text-2xl rounded-md transition-colors flex items-center justify-center">-30</button>
+                        <button @click="submitScore('yellow', 'punishment', 4)" class="bg-yellow-400 hover:bg-yellow-500 text-black font-black text-2xl rounded-md transition-colors flex items-center justify-center">-40</button>
                     </div>
 
                     <!-- Neutral Logo Section (Center) -->
@@ -383,10 +383,10 @@ onUnmounted(() => {
                             <Delete class="w-8 h-8 stroke-[3]" />
                         </button>
 
-                        <button @click="submitScore('blue', 'punishment', 4)" class="bg-blue-600 hover:bg-blue-500 text-white font-black text-2xl rounded-md transition-colors flex items-center justify-center">-10</button>
-                        <button @click="submitScore('blue', 'punishment', 1)" class="bg-blue-600 hover:bg-blue-500 text-white font-black text-2xl rounded-md transition-colors flex items-center justify-center">-20</button>
-                        <button @click="submitScore('blue', 'punishment', 2)" class="bg-blue-600 hover:bg-blue-500 text-white font-black text-2xl rounded-md transition-colors flex items-center justify-center">-30</button>
-                        <button @click="submitScore('blue', 'punishment', 3)" class="bg-blue-600 hover:bg-blue-500 text-white font-black text-2xl rounded-md transition-colors flex items-center justify-center">-40</button>
+                        <button @click="submitScore('blue', 'punishment', 1)" class="bg-blue-600 hover:bg-blue-500 text-white font-black text-2xl rounded-md transition-colors flex items-center justify-center">-10</button>
+                        <button @click="submitScore('blue', 'punishment', 2)" class="bg-blue-600 hover:bg-blue-500 text-white font-black text-2xl rounded-md transition-colors flex items-center justify-center">-20</button>
+                        <button @click="submitScore('blue', 'punishment', 3)" class="bg-blue-600 hover:bg-blue-500 text-white font-black text-2xl rounded-md transition-colors flex items-center justify-center">-30</button>
+                        <button @click="submitScore('blue', 'punishment', 4)" class="bg-blue-600 hover:bg-blue-500 text-white font-black text-2xl rounded-md transition-colors flex items-center justify-center">-40</button>
                     </div>
 
                 </div>

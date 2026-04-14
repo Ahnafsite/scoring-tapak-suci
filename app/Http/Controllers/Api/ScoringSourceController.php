@@ -55,7 +55,9 @@ class ScoringSourceController extends Controller
             $data = $response->json();
             $matches = $data['data'] ?? $data;
 
-            // Remove query()->delete() to preserve data on other tables
+            // Per user request, delete old schedules to only keep the current session
+            \App\Models\FightSchedule::query()->delete();
+
             foreach ($matches as $match) {
                 $winnerCorner = $match['winner_corner'] ?? null;
                 if ($winnerCorner === 'red') $winnerCorner = 'yellow';

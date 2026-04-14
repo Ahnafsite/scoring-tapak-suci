@@ -12,6 +12,7 @@ use App\Models\FightRecapJuryPoint;
 use App\Models\FightDetailJuryPointBlue;
 use App\Models\FightDetailJuryPointYellow;
 use App\Events\ActiveMatchUpdated;
+use App\Enums\WinnerStatus;
 
 class MatchSyncController extends Controller
 {
@@ -23,6 +24,9 @@ class MatchSyncController extends Controller
         ]);
 
         $match = FightMatch::findOrFail($validated['id']);
+        
+        $isStartingFirstRound = ($validated['status'] === 'ongoing' && $match->status !== 'ongoing' && $match->round_number == 1);
+        
         $match->update(['status' => $validated['status']]);
 
         // Also update related fight_schedule status
@@ -33,6 +37,27 @@ class MatchSyncController extends Controller
 
         // Broadcast real-time update
         broadcast(new ActiveMatchUpdated($match->fresh()))->toOthers();
+
+        if ($isStartingFirstRound) {
+            try {
+                $apiUrl = rtrim(env('API_URL'), '/');
+                $apiKey = env('API_KEY');
+
+                if (!preg_match("~^(?:f|ht)tps?://~i", $apiUrl)) {
+                    $apiUrl = "http://" . $apiUrl;
+                }
+
+                Http::withHeaders([
+                    'X-API-KEY' => $apiKey,
+                    'Accept' => 'application/json',
+                    'Content-Type' => 'application/json',
+                ])->post("{$apiUrl}/partai/partai-status/{$match->partai_id}", [
+                    'status' => 'ongoing'
+                ]);
+            } catch (\Exception $e) {
+                \Log::error("Failed to update status to server: " . $e->getMessage());
+            }
+        }
 
         return response()->json(['success' => true, 'data' => $match]);
     }
@@ -118,7 +143,6 @@ class MatchSyncController extends Controller
             FightRecapJuryPoint::query()->delete();
             FightMatch::query()->delete();
 
-            // Insert new data for the selected match in fight_matches table.
             $match = FightMatch::create([
                 'match_code' => $data['match_code'],
                 'fight_schedule_id' => $request->input('fight_schedule_id'),
@@ -140,6 +164,18 @@ class MatchSyncController extends Controller
                 'weight_blue' => $data['weight_blue'],
                 'weight_status_blue' => $data['weight_status_blue'],
             ]);
+
+            if ($request->input('fight_schedule_id')) {
+                FightSchedule::where('id', $request->input('fight_schedule_id'))
+                    ->update([
+                        'athlete_yellow' => $data['atlete_yellow'],
+                        'athlete_blue' => $data['atlete_blue'],
+                        'contingent_yellow' => $data['contingent_yellow'],
+                        'contingent_blue' => $data['contingent_blue'],
+                        'status' => $data['status'],
+                        'winner_corner' => $data['winner_corner'] ?? null,
+                    ]);
+            }
 
             $roundsRecapMap = [
                 'recap_jury_poin_round_one' => 1,
@@ -263,5 +299,139 @@ class MatchSyncController extends Controller
                 'error' => $e->getMessage()
             ], 500);
         }
+    }
+
+    public function savePartaiDataTs(Request $request, $partai_id)
+    {
+        $validated = $request->validate([
+            'winner_corner' => 'required|in:yellow,blue,draw',
+            'winner_status' => 'required|string',
+        ]);
+
+        $match = FightMatch::where('partai_id', $partai_id)->firstOrFail();
+        
+        $match->update([
+            'status' => 'done',
+            'winner_corner' => $validated['winner_corner'],
+            'winner_status' => $validated['winner_status'],
+        ]);
+        
+        // Prepare API Payload for External Tapak Suci Server
+        $recaps = FightRecapJuryPoint::orderBy('round_number')->get();
+        $totalPoinYellow = $recaps->sum('total_poin_yellow');
+        $totalPoinBlue = $recaps->sum('total_poin_blue');
+        
+        $payload = [
+            'status' => 'done', // The new status after saving
+            'total_poin_blue' => (string) $totalPoinBlue,
+            'total_poin_yellow' => (string) $totalPoinYellow,
+            'round_number' => $match->round_number,
+            'winner_corner' => $validated['winner_corner'],
+            'winner_status' => $validated['winner_status'],
+        ];
+
+        // Format recap for rounds 1, 2, 3
+        $roundsMap = [
+            1 => 'recap_jury_poin_round_one',
+            2 => 'recap_jury_poin_round_two',
+            3 => 'recap_jury_poin_round_add' // Usually TS TBH round
+        ];
+        
+        $refScores = \App\Models\RefScore::pluck('name', 'id')->toArray();
+        $refPunishments = \App\Models\RefPunishment::pluck('name', 'id')->toArray();
+
+        $juryKeys = [1 => 'juri_one', 2 => 'juri_two', 3 => 'juri_three', 4 => 'juri_four'];
+        $words = ['one', 'two', 'three', 'four'];
+
+        foreach ($recaps as $recap) {
+            $rNum = $recap->round_number;
+            if (!isset($roundsMap[$rNum])) continue;
+            $rKey = $roundsMap[$rNum];
+            
+            $payload[$rKey] = [
+                'round_winner' => $recap->winner
+            ];
+            
+            foreach ($juryKeys as $jNum => $jKey) {
+                // Get detail scores for Blue
+                $bluePoints = FightDetailJuryPointBlue::where('round_number', $rNum)
+                                ->where('jury_number', $jNum)
+                                ->orderBy('id')->get();
+                $arrBlue = [];
+                foreach ($bluePoints as $bp) {
+                    if ($bp->ref_score_id) $arrBlue[] = $refScores[$bp->ref_score_id] ?? '';
+                    elseif ($bp->ref_punishment_id) $arrBlue[] = $refPunishments[$bp->ref_punishment_id] ?? '';
+                }
+
+                // Get detail scores for Yellow
+                $yellowPoints = FightDetailJuryPointYellow::where('round_number', $rNum)
+                                ->where('jury_number', $jNum)
+                                ->orderBy('id')->get();
+                $arrYellow = [];
+                foreach ($yellowPoints as $yp) {
+                    if ($yp->ref_score_id) $arrYellow[] = $refScores[$yp->ref_score_id] ?? '';
+                    elseif ($yp->ref_punishment_id) $arrYellow[] = $refPunishments[$yp->ref_punishment_id] ?? '';
+                }
+
+                $word = $words[$jNum - 1]; 
+
+                $payload[$rKey][$jKey] = [
+                    'detail_score_blue' => $arrBlue,
+                    'detail_score_yellow' => $arrYellow,
+                    'total_poin_blue' => (string) $recap->{"jury_{$word}_total_poin_blue"},
+                    'total_poin_yellow' => (string) $recap->{"jury_{$word}_total_poin_yellow"},
+                    'winner' => $recap->{"jury_{$word}_winner"}
+                ];
+            }
+        }
+        
+        $apiUrl = rtrim(env('API_URL'), '/');
+        $apiKey = env('API_KEY');
+
+        if (!preg_match("~^(?:f|ht)tps?://~i", $apiUrl)) {
+            $apiUrl = "http://" . $apiUrl;
+        }
+
+        try {
+            $response = Http::withHeaders([
+                'X-API-KEY' => $apiKey,
+                'Accept' => 'application/json',
+                'Content-Type' => 'application/json',
+            ])->post("{$apiUrl}/partai/save-partai-data-ts/{$partai_id}", $payload);
+
+            if (!$response->successful()) {
+                \Log::error("Failed saving partai to server: " . $response->body());
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Gagal menyimpan data ke server scoring.',
+                    'error' => $response->json() ?? $response->body(),
+                    'payload' => $payload
+                ], 400);
+            }
+        } catch (\Exception $e) {
+            \Log::error("Exception saving partai to server: " . $e->getMessage());
+            return response()->json([
+                'success' => false,
+                'message' => 'Gagal menghubungi server.',
+                'error' => $e->getMessage(),
+                'payload' => $payload
+            ], 500);
+        }
+
+        if ($match->fight_schedule_id) {
+            FightSchedule::where('id', $match->fight_schedule_id)
+                ->update([
+                    'status' => 'done',
+                    'winner_corner' => $validated['winner_corner']
+                ]);
+        }
+
+        broadcast(new ActiveMatchUpdated($match->fresh()))->toOthers();
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Data pertandingan berhasil disimpan dan disinkronkan.',
+            'data' => $match
+        ]);
     }
 }

@@ -23,6 +23,8 @@ import { Card, CardHeader, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
 import { RefreshCw } from 'lucide-vue-next';
+import { Toaster } from '@/components/ui/sonner';
+import { toast } from 'vue-sonner';
 
 const props = defineProps<{
     schedules: any[];
@@ -45,6 +47,12 @@ const isWinnerDialogOpen = ref(false);
 const suggestedWinner = ref('');
 const selectedRoundWinner = ref('');
 const isSavingWinner = ref(false);
+
+const isMatchWinnerDialogOpen = ref(false);
+const suggestedMatchWinner = ref('');
+const selectedMatchWinner = ref('');
+const selectedWinnerStatus = ref('menang_angka');
+const isSavingMatchWinner = ref(false);
 
 const gelanggangList = ref<any[]>([]);
 const sesiList = ref<any[]>([]);
@@ -145,6 +153,18 @@ const isActiveMatch = (match: any) => {
 };
 
 const openConfirm = (match: any) => {
+    const yellowIsPemenang = match.athlete_yellow && match.athlete_yellow.toLowerCase().includes('pemenang partai');
+    const blueIsPemenang = match.athlete_blue && match.athlete_blue.toLowerCase().includes('pemenang partai');
+
+    if (yellowIsPemenang && !match.winner_corner) {
+        toast.error(`${match.athlete_yellow} belum ada. Silakan kembali ke ${match.athlete_yellow} terlebih dahulu.`);
+        return;
+    }
+    if (blueIsPemenang && !match.winner_corner) {
+        toast.error(`${match.athlete_blue} belum ada. Silakan kembali ke ${match.athlete_blue} terlebih dahulu.`);
+        return;
+    }
+
     if (isActiveMatch(match)) {
         return; // Prevent clicking on the currently active match again
     }
@@ -210,8 +230,88 @@ const setStatus = async (newStatus: string) => {
     }
 };
 
+const canShowKeputusan = computed(() => {
+    if (!currentMatchDetail.value || !currentRecapDetail.value) return false;
+    const validRecaps = currentRecapDetail.value.filter((r: any) => r.winner && r.winner !== '');
+    
+    if (validRecaps.length === 2) {
+        const r1 = validRecaps.find((r: any) => r.round_number == 1);
+        const r2 = validRecaps.find((r: any) => r.round_number == 2);
+        
+        if (r1 && r2) {
+            if ((r1.winner === 'yellow' && r2.winner === 'blue') || 
+                (r1.winner === 'blue' && r2.winner === 'yellow') ||
+                (r1.winner === 'draw' && r2.winner === 'draw')) {
+                return false;
+            }
+        }
+    }
+    
+    return validRecaps.length >= 2;
+});
+
+const calculateMatchWinner = () => {
+    if (!currentRecapDetail.value) return '';
+
+    let yellowWins = 0;
+    let blueWins = 0;
+    let totalYellow = 0;
+    let totalBlue = 0;
+
+    currentRecapDetail.value.forEach((r: any) => {
+        if (r.winner === 'yellow') yellowWins++;
+        else if (r.winner === 'blue') blueWins++;
+        
+        totalYellow += (r.total_poin_yellow || 0);
+        totalBlue += (r.total_poin_blue || 0);
+    });
+
+    if (yellowWins > blueWins) return 'yellow';
+    if (blueWins > yellowWins) return 'blue';
+
+    if (totalYellow > totalBlue) return 'yellow';
+    if (totalBlue > totalYellow) return 'blue';
+
+    const weightYellow = parseFloat(currentMatchDetail.value.weight_yellow) || 0;
+    const weightBlue = parseFloat(currentMatchDetail.value.weight_blue) || 0;
+
+    if (weightYellow < weightBlue) return 'yellow';
+    if (weightBlue < weightYellow) return 'blue';
+
+    return 'draw';
+};
+
 const triggerKeputusan = () => {
-    setStatus('done');
+    const sug = calculateMatchWinner();
+    suggestedMatchWinner.value = sug;
+    selectedMatchWinner.value = sug;
+    selectedWinnerStatus.value = 'menang_angka';
+    
+    if (currentMatchDetail.value) {
+        localStorage.setItem('pending_keputusan_match_code', currentMatchDetail.value.match_code);
+    }
+
+    isMatchWinnerDialogOpen.value = true;
+};
+
+const saveMatchWinner = async () => {
+    if (!currentMatchDetail.value || !selectedMatchWinner.value || !selectedWinnerStatus.value) return;
+    isSavingMatchWinner.value = true;
+    try {
+        const response = await axios.post(`/api/partai/save-partai-data-ts/${currentMatchDetail.value.partai_id}`, {
+            winner_corner: selectedMatchWinner.value,
+            winner_status: selectedWinnerStatus.value
+        });
+
+        currentMatchDetail.value = response.data.data;
+        isMatchWinnerDialogOpen.value = false;
+        localStorage.removeItem('pending_keputusan_match_code');
+        router.reload({ only: ['schedules', 'activeMatch'] });
+    } catch (e) {
+        console.error('Failed to save match winner', e);
+    } finally {
+        isSavingMatchWinner.value = false;
+    }
 };
 
 const triggerReset = () => {
@@ -239,6 +339,7 @@ const syncMatch = async () => {
         currentMatchDetail.value = response.data.data;
         if(response.data.recap) currentRecapDetail.value = response.data.recap;
         isConfirmDialogOpen.value = false;
+        setTimeout(checkUnfinishedDecision, 100);
         router.reload({ only: ['schedules', 'activeMatch', 'recapJuryPoint'] });
     } catch (e) {
         console.error('Failed to sync match', e);
@@ -296,6 +397,10 @@ const triggerPause = async () => {
     suggestedWinner.value = sug;
     selectedRoundWinner.value = sug;
     
+    if (currentMatchDetail.value) {
+        localStorage.setItem(`pending_round_decision_${currentMatchDetail.value.match_code}`, currentMatchDetail.value.round_number.toString());
+    }
+
     isWinnerDialogOpen.value = true;
     await setStatus('paused');
 };
@@ -317,6 +422,7 @@ const saveRoundWinner = async () => {
                 currentRecapDetail.value.push(response.data.data);
             }
         }
+        localStorage.removeItem(`pending_round_decision_${currentMatchDetail.value.match_code}`);
         isWinnerDialogOpen.value = false;
     } catch (e) {
         console.error(e);
@@ -329,6 +435,33 @@ const saveRoundWinner = async () => {
 let echoStatusChannel: any = null;
 let echoScoreChannel: any = null;
 
+const checkUnfinishedDecision = () => {
+    if (!currentMatchDetail.value) return;
+
+    if (currentMatchDetail.value.status === 'paused') {
+        const roundNum = currentMatchDetail.value.round_number;
+        const currentRoundWinner = getRoundWinner(roundNum);
+        const pendingRound = localStorage.getItem(`pending_round_decision_${currentMatchDetail.value.match_code}`);
+        
+        if (!currentRoundWinner && pendingRound == roundNum.toString()) {
+            const sug = calculateSuggestedWinner();
+            suggestedWinner.value = sug;
+            selectedRoundWinner.value = sug;
+            isWinnerDialogOpen.value = true;
+            return;
+        }
+    }
+    
+    const pendingKeputusan = localStorage.getItem('pending_keputusan_match_code');
+    if (pendingKeputusan && pendingKeputusan == currentMatchDetail.value.match_code && !currentMatchDetail.value.winner_corner) {
+        const sug = calculateMatchWinner();
+        suggestedMatchWinner.value = sug;
+        selectedMatchWinner.value = sug;
+        selectedWinnerStatus.value = 'menang_angka';
+        isMatchWinnerDialogOpen.value = true;
+    }
+};
+
 onMounted(() => {
     const echo = (window as any).Echo;
     if (!echo) return;
@@ -338,6 +471,7 @@ onMounted(() => {
         .listen('.ActiveMatchUpdated', (e: any) => {
             if (e.match) {
                 currentMatchDetail.value = e.match;
+                setTimeout(checkUnfinishedDecision, 100);
             }
         });
 
@@ -353,6 +487,8 @@ onMounted(() => {
                 }
             }
         });
+        
+    setTimeout(checkUnfinishedDecision, 500);
 });
 
 onUnmounted(() => {
@@ -372,6 +508,7 @@ onUnmounted(() => {
 
 <template>
     <Head title="Control Panel - Tapak Suci" />
+    <Toaster rich-colors />
     <div class="flex h-screen bg-background text-foreground overflow-hidden">
         <!-- Sidebar -->
         <div class="w-92 bg-zinc-900 border-r border-border flex flex-col h-full shadow-xl z-10 shrink-0">
@@ -436,13 +573,25 @@ onUnmounted(() => {
                         </p>
                         <div class="flex items-start justify-between gap-2">
                             <div class="flex-1 min-w-0 text-right">
-                                <p class="text-sm font-semibold text-yellow-400 line-clamp-2 leading-relaxed uppercase">{{ match.athlete_yellow || '-' }}</p>
-                                <p class="text-[12px] text-white line-clamp-2 mt-0.5 uppercase">{{ match.contingent_yellow || 'Kontingen' }}</p>
+                                <p :class="[
+                                    'text-sm font-semibold line-clamp-2 leading-relaxed uppercase transition-all',
+                                    match.winner_corner === 'blue' && match.status === 'done' ? 'text-yellow-400/50 line-through' : 'text-yellow-400'
+                                ]">{{ match.athlete_yellow || '-' }}</p>
+                                <p :class="[
+                                    'text-[12px] line-clamp-2 mt-0.5 uppercase transition-all',
+                                    match.winner_corner === 'blue' && match.status === 'done' ? 'text-white/50 line-through' : 'text-white'
+                                ]">{{ match.contingent_yellow || 'Kontingen' }}</p>
                             </div>
                             <div class="px-1.5 font-bold text-muted-foreground/50 text-[10px] italic shrink-0 pt-0.5">VS</div>
                             <div class="flex-1 min-w-0 text-left">
-                                <p class="text-sm font-semibold text-blue-400 line-clamp-2 leading-relaxed uppercase">{{ match.athlete_blue || '-' }}</p>
-                                <p class="text-[12px] text-white line-clamp-2 mt-0.5 uppercase">{{ match.contingent_blue || 'Kontingen' }}</p>
+                                <p :class="[
+                                    'text-sm font-semibold line-clamp-2 leading-relaxed uppercase transition-all',
+                                    match.winner_corner === 'yellow' && match.status === 'done' ? 'text-blue-400/50 line-through' : 'text-blue-400'
+                                ]">{{ match.athlete_blue || '-' }}</p>
+                                <p :class="[
+                                    'text-[12px] line-clamp-2 mt-0.5 uppercase transition-all',
+                                    match.winner_corner === 'yellow' && match.status === 'done' ? 'text-white/50 line-through' : 'text-white'
+                                ]">{{ match.contingent_blue || 'Kontingen' }}</p>
                             </div>
                         </div>
                     </CardContent>
@@ -682,8 +831,8 @@ onUnmounted(() => {
                              RESUME
                          </Button>
 
-                         <!-- Keputusan (Only when paused AND round_number >= 2) -->
-                         <Button v-if="currentMatchDetail.round_number >= 2 && currentMatchDetail.status === 'paused'" class="bg-green-500 hover:bg-green-600 text-white font-bold tracking-wider" @click="triggerKeputusan()">
+                         <!-- Keputusan (Only when paused AND can show keputusan logic valid) -->
+                         <Button v-if="canShowKeputusan && currentMatchDetail.status === 'paused'" class="bg-green-500 hover:bg-green-600 text-white font-bold tracking-wider" @click="triggerKeputusan()">
                              KEPUTUSAN
                          </Button>
 
@@ -803,8 +952,8 @@ onUnmounted(() => {
         </Dialog>
 
         <!-- Winner Selection Dialog -->
-        <Dialog :open="isWinnerDialogOpen" @update:open="isWinnerDialogOpen = $event">
-            <DialogContent class="sm:max-w-[400px]">
+        <Dialog :open="isWinnerDialogOpen" @update:open="(val) => { if (val) isWinnerDialogOpen = val; }">
+            <DialogContent class="sm:max-w-[400px]" :showCloseButton="false" @interact-outside.prevent @escape-keydown.prevent>
                 <DialogHeader class="pb-2 text-center flex flex-col items-center">
                     <DialogTitle class="text-xl font-black uppercase text-primary tracking-widest">Pilih Pemenang Ronde</DialogTitle>
                     <DialogDescription class="text-muted-foreground text-sm pt-2">
@@ -849,6 +998,84 @@ onUnmounted(() => {
                 <DialogFooter class="pt-2">
                     <Button @click="saveRoundWinner" class="w-full font-black uppercase tracking-widest" :disabled="isSavingWinner">
                         {{ isSavingWinner ? 'Menyimpan...' : 'Simpan Pemenang' }}
+                    </Button>
+                </DialogFooter>
+            </DialogContent>
+        </Dialog>
+
+        <!-- Match Winner Selection Dialog -->
+        <Dialog :open="isMatchWinnerDialogOpen" @update:open="(val) => { if (val) isMatchWinnerDialogOpen = val; }">
+            <DialogContent class="sm:max-w-[500px]" :showCloseButton="false" @interact-outside.prevent @escape-keydown.prevent>
+                <DialogHeader class="pb-2 text-center flex flex-col items-center">
+                    <DialogTitle class="text-xl font-black uppercase text-primary tracking-widest">Keputusan Pemenang Partai</DialogTitle>
+                    <DialogDescription class="text-muted-foreground text-sm pt-2">
+                        Berdasarkan poin dan aturan Tapak Suci, pemenang pertandingan ini jatuh pada sudut:
+                    </DialogDescription>
+                    <Badge class="mt-3 text-sm font-black uppercase tracking-widest px-6 py-1.5"
+                           :class="[
+                               suggestedMatchWinner === 'yellow' ? 'bg-yellow-500 text-black' :
+                               suggestedMatchWinner === 'blue' ? 'bg-blue-600 text-white' :
+                               'bg-stone-500 text-white'
+                           ]">
+                        {{ suggestedMatchWinner === 'yellow' ? 'Kuning' : suggestedMatchWinner === 'blue' ? 'Biru' : 'Seri' }}
+                    </Badge>
+                </DialogHeader>
+
+                <div class="space-y-4">
+                    <div>
+                        <h4 class="text-sm font-bold mb-2">Pilih Pemenang</h4>
+                        <div class="grid grid-cols-3 gap-3">
+                            <div @click="selectedMatchWinner = 'yellow'" 
+                                 :class="['cursor-pointer border-2 rounded-xl flex flex-col items-center justify-center p-4 transition-all', selectedMatchWinner === 'yellow' ? 'border-yellow-500 bg-yellow-500/20' : 'border-stone-800 hover:border-yellow-500/50']">
+                                 <div :class="['w-4 h-4 rounded-full border mb-2 flex items-center justify-center', selectedMatchWinner === 'yellow' ? 'border-yellow-500 bg-yellow-500/20' : 'border-stone-600']">
+                                     <div v-if="selectedMatchWinner === 'yellow'" class="w-2 h-2 rounded-full bg-yellow-500"></div>
+                                 </div>
+                                 <span class="font-bold text-yellow-500">Kuning</span>
+                            </div>
+
+                            <div @click="selectedMatchWinner = 'draw'" 
+                                 :class="['cursor-pointer border-2 rounded-xl flex flex-col items-center justify-center p-4 transition-all', selectedMatchWinner === 'draw' ? 'border-stone-400 bg-stone-500/20' : 'border-stone-800 hover:border-stone-500/50']">
+                                 <div :class="['w-4 h-4 rounded-full border mb-2 flex items-center justify-center', selectedMatchWinner === 'draw' ? 'border-stone-400 bg-stone-500/20' : 'border-stone-600']">
+                                     <div v-if="selectedMatchWinner === 'draw'" class="w-2 h-2 rounded-full bg-stone-400"></div>
+                                 </div>
+                                 <span class="font-bold text-stone-400">Seri</span>
+                            </div>
+
+                            <div @click="selectedMatchWinner = 'blue'" 
+                                 :class="['cursor-pointer border-2 rounded-xl flex flex-col items-center justify-center p-4 transition-all', selectedMatchWinner === 'blue' ? 'border-blue-500 bg-blue-500/20' : 'border-stone-800 hover:border-blue-500/50']">
+                                 <div :class="['w-4 h-4 rounded-full border mb-2 flex items-center justify-center', selectedMatchWinner === 'blue' ? 'border-blue-500 bg-blue-500/20' : 'border-stone-600']">
+                                     <div v-if="selectedMatchWinner === 'blue'" class="w-2 h-2 rounded-full bg-blue-500"></div>
+                                 </div>
+                                 <span class="font-bold text-blue-400">Biru</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div>
+                        <h4 class="text-sm font-bold mb-2">Status Kemenangan</h4>
+                        <div class="grid grid-cols-2 gap-2">
+                            <div v-for="status in [
+                                { val: 'menang_angka', label: 'Menang Angka' },
+                                { val: 'menang_teknik', label: 'Menang Teknik' },
+                                { val: 'menang_mutlak', label: 'Menang Mutlak' },
+                                { val: 'menang_wmp', label: 'Menang WMP' },
+                                { val: 'menang_undur_diri', label: 'Menang Undur Diri' },
+                                { val: 'menang_diskualifikasi', label: 'Menang Diskualifikasi' }
+                            ]" :key="status.val"
+                                 @click="selectedWinnerStatus = status.val"
+                                 :class="['cursor-pointer border border-stone-800 rounded-lg p-3 flex items-center gap-3 transition-all', selectedWinnerStatus === status.val ? 'bg-primary/10 border-primary' : 'hover:border-stone-600']">
+                                 <div :class="['w-4 h-4 rounded-full border flex-shrink-0 flex items-center justify-center', selectedWinnerStatus === status.val ? 'border-primary' : 'border-stone-600']">
+                                     <div v-if="selectedWinnerStatus === status.val" class="w-2 h-2 rounded-full bg-primary"></div>
+                                 </div>
+                                 <span :class="['text-sm font-semibold', selectedWinnerStatus === status.val ? 'text-primary' : 'text-stone-300']">{{ status.label }}</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <DialogFooter class="pt-4">
+                    <Button @click="saveMatchWinner" class="w-full font-black uppercase tracking-widest bg-green-500 hover:bg-green-600 text-white" :disabled="isSavingMatchWinner">
+                        {{ isSavingMatchWinner ? 'Menyimpan & Mensinkronisasi...' : 'Simpan & Akhiri Partai' }}
                     </Button>
                 </DialogFooter>
             </DialogContent>

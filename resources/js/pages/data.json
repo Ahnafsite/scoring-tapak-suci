@@ -1,0 +1,179 @@
+{
+    "status": "done",
+    "total_poin_blue": "0",
+    "total_poin_yellow": "0",
+    "round_number": 3,
+    "winner_corner": "yellow",
+    "winner_status": "menang_angka",
+    "recap_jury_poin_round_one": {
+        "juri_one": {
+            "total_poin_blue": 90,
+            "total_poin_yellow": 110,
+            "winner": "yellow",
+            "detail_score_blue": [
+                "40",
+                "10+40"
+            ],
+            "detail_score_yellow": [
+                "40",
+                "30",
+                "10+30"
+            ]
+        },
+        "juri_two": {
+            "total_poin_blue": 130,
+            "total_poin_yellow": 120,
+            "winner": "blue",
+            "detail_score_blue": [
+                "40",
+                "10+40",
+                "10+30"
+            ],
+            "detail_score_yellow": [
+                "30",
+                "10+30",
+                "10+40"
+            ]
+        },
+        "juri_three": {
+            "total_poin_blue": 50,
+            "total_poin_yellow": 80,
+            "winner": "yellow",
+            "detail_score_blue": [
+                "20",
+                "10+20"
+            ],
+            "detail_score_yellow": [
+                "10+30",
+                "10+30"
+            ]
+        },
+        "juri_four": {
+            "total_poin_blue": 120,
+            "total_poin_yellow": 160,
+            "winner": "yellow",
+            "detail_score_blue": [
+                "10+20",
+                "10+30",
+                "30",
+                "20"
+            ],
+            "detail_score_yellow": [
+                "10+40",
+                "40",
+                "30",
+                "10+30"
+            ]
+        },
+        "round_winner": "yellow"
+    },
+    "recap_jury_poin_round_two": {
+        "juri_one": {
+            "total_poin_blue": 70,
+            "total_poin_yellow": 50,
+            "winner": "blue",
+            "detail_score_blue": [
+                "30",
+                "10+30"
+            ],
+            "detail_score_yellow": [
+                "10+40"
+            ]
+        },
+        "juri_two": {
+            "total_poin_blue": 70,
+            "total_poin_yellow": 30,
+            "winner": "blue",
+            "detail_score_blue": [
+                "30",
+                "10+30"
+            ],
+            "detail_score_yellow": [
+                "30"
+            ]
+        },
+        "juri_three": {
+            "total_poin_blue": 80,
+            "total_poin_yellow": 40,
+            "winner": "blue",
+            "detail_score_blue": [
+                "40",
+                "10+30"
+            ],
+            "detail_score_yellow": [
+                "40"
+            ]
+        },
+        "juri_four": {
+            "total_poin_blue": 70,
+            "total_poin_yellow": 40,
+            "winner": "blue",
+            "detail_score_blue": [
+                "30",
+                "10+30"
+            ],
+            "detail_score_yellow": [
+                "40"
+            ]
+        },
+        "round_winner": "blue"
+    },
+    "recap_jury_poin_round_add": {
+        "juri_one": {
+            "total_poin_blue": 90,
+            "total_poin_yellow": 120,
+            "winner": "yellow",
+            "detail_score_blue": [
+                "10+30",
+                "10+40"
+            ],
+            "detail_score_yellow": [
+                "10+40",
+                "40",
+                "30"
+            ]
+        },
+        "juri_two": {
+            "total_poin_blue": 70,
+            "total_poin_yellow": 90,
+            "winner": "yellow",
+            "detail_score_blue": [
+                "10+20",
+                "10+30"
+            ],
+            "detail_score_yellow": [
+                "10+30",
+                "10+40"
+            ]
+        },
+        "juri_three": {
+            "total_poin_blue": 30,
+            "total_poin_yellow": 70,
+            "winner": "yellow",
+            "detail_score_blue": [
+                "10+20"
+            ],
+            "detail_score_yellow": [
+                "30",
+                "10+30"
+            ]
+        },
+        "juri_four": {
+            "total_poin_blue": 30,
+            "total_poin_yellow": 70,
+            "winner": "yellow",
+            "detail_score_blue": [
+                "10+20"
+            ],
+            "detail_score_yellow": [
+                "10+30",
+                "30"
+            ]
+        },
+        "round_winner": "yellow"
+    },
+    "weight_blue": 0,
+    "weight_status_blue": "belum timbang badan",
+    "weight_yellow": 0,
+    "weight_status_yellow": "belum timbang badan"
+}

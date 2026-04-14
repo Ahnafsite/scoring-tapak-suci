@@ -104,20 +104,70 @@ const activeRoundJuriesData = computed(() => {
     const roundDetails = localRecapPoints.value.find(r => r.round_number === roundNumber);
     const jNumMap: Record<number, string> = { 1: 'one', 2: 'two', 3: 'three', 4: 'four' };
     
+    // Evaluate cross-jury validity mathematically (similar to backend recap tally)
+    const evaluateValidity = (pointsArray: any[]) => {
+        const juryPointCounts: Record<number, Record<string, number>> = { 1: {}, 2: {}, 3: {}, 4: {} };
+        const validCounts: Record<string, number> = {};
+
+        pointsArray.forEach(p => {
+             const jn = p.jury_number;
+             if (jn >= 1 && jn <= 4) {
+                 const id = p.ref_score_id ? `s:${p.ref_score_id}` : `p:${p.ref_punishment_id}`;
+                 if (!juryPointCounts[jn][id]) juryPointCounts[jn][id] = 0;
+                 juryPointCounts[jn][id]++;
+             }
+        });
+
+        const allIds = new Set<string>();
+        [1,2,3,4].forEach(j => Object.keys(juryPointCounts[j]).forEach(k => allIds.add(k)));
+        
+        allIds.forEach(id => {
+            let maxOccurrences = 0;
+            for(let j=1; j<=4; j++) {
+                const count = juryPointCounts[j][id] || 0;
+                if(count > maxOccurrences) maxOccurrences = count;
+            }
+
+            validCounts[id] = 0;
+            for(let k=1; k<=maxOccurrences; k++) {
+                let jCount = 0;
+                for(let j=1; j<=4; j++) {
+                     if((juryPointCounts[j][id] || 0) >= k) jCount++;
+                }
+                if (jCount >= 3) {
+                    validCounts[id]++;
+                }
+            }
+        });
+
+        const markedCounts: Record<number, Record<string, number>> = { 1: {}, 2: {}, 3: {}, 4: {} };
+        return pointsArray.map(p => {
+             const jn = p.jury_number;
+             if (jn >= 1 && jn <= 4) {
+                 const id = p.ref_score_id ? `s:${p.ref_score_id}` : `p:${p.ref_punishment_id}`;
+                 if (!markedCounts[jn][id]) markedCounts[jn][id] = 0;
+                 markedCounts[jn][id]++;
+                 return { ...p, is_valid: markedCounts[jn][id] <= (validCounts[id] || 0) };
+             }
+             return { ...p, is_valid: false };
+        });
+    };
+
+    const evalYellow = evaluateValidity(localYellowPoints.value.filter(p => p.round_number === roundNumber));
+    const evalBlue = evaluateValidity(localBluePoints.value.filter(p => p.round_number === roundNumber));
+    
     return [1, 2, 3, 4].map(juryNumber => {
-        const yDetails = localYellowPoints.value.filter(
-            p => p.jury_number === juryNumber && p.round_number === roundNumber
-        );
-        const bDetails = localBluePoints.value.filter(
-            p => p.jury_number === juryNumber && p.round_number === roundNumber
-        );
+        const yDetails = evalYellow.filter(p => p.jury_number === juryNumber);
+        const bDetails = evalBlue.filter(p => p.jury_number === juryNumber);
         
         let yTotal = 0;
         let bTotal = 0;
+        let juryWinner = 'draw';
         if (roundDetails) {
             const word = jNumMap[juryNumber];
             yTotal = roundDetails[`jury_${word}_total_poin_yellow`] ?? 0;
             bTotal = roundDetails[`jury_${word}_total_poin_blue`] ?? 0;
+            juryWinner = roundDetails[`jury_${word}_winner`] || 'draw';
         }
         
         return {
@@ -125,7 +175,8 @@ const activeRoundJuriesData = computed(() => {
             yellow_details: yDetails,
             yellow_total: yTotal,
             blue_details: bDetails,
-            blue_total: bTotal
+            blue_total: bTotal,
+            jury_winner: juryWinner
         };
     });
 });
@@ -254,15 +305,16 @@ const activeRoundRecap = computed(() => {
                                         <!-- Blue Nilai -->
                                         <div class="bg-zinc-800 border-[1.5px] border-blue-600/40 rounded-md px-4 py-2 flex flex-wrap content-center gap-1.5 overflow-hidden">
                                             <template v-for="(p, i) in jury.blue_details" :key="'bn'+i">
-                                                <span v-if="p.ref_score_id" class="text-white text-[1.1rem] font-bold leading-none">{{ p.score?.name }},</span>
-                                                <span v-else-if="p.ref_punishment_id" class="text-red-500 text-[1.1rem] font-bold leading-none">{{ p.punishment?.name }},</span>
+                                                <span v-if="p.ref_score_id" :class="[p.is_valid ? 'text-green-500' : 'text-white', 'text-[1.1rem] font-bold leading-none']">{{ p.score?.name }},</span>
+                                                <span v-else-if="p.ref_punishment_id" :class="[p.is_valid ? 'text-red-500 underline decoration-green-500 underline-offset-4 decoration-2' : 'text-red-500', 'text-[1.1rem] font-bold leading-none']">{{ p.punishment?.name }},</span>
                                             </template>
                                         </div>
                                         
                                         <!-- Blue Total -->
                                         <div :class="[
-                                            'flex items-center justify-center rounded-md border-[1.5px] font-black text-2xl tabular-nums tracking-tighter', 
-                                            jury.blue_total > 200 ? 'bg-red-600 border-red-500 text-white' : 'bg-zinc-800/80 border-blue-600/40 text-white'
+                                            'flex items-center justify-center rounded-md border-[1.5px] font-black text-2xl tabular-nums tracking-tighter transition-colors', 
+                                            jury.blue_total > 200 ? 'bg-red-600 border-red-500 text-white' : 
+                                            (jury.jury_winner === 'blue' ? 'bg-blue-600 border-blue-500 text-white shadow-[0_0_15px_rgba(37,99,235,0.4)]' : 'bg-zinc-800/80 border-blue-600/40 text-blue-100/70')
                                         ]">
                                             {{ jury.blue_total }}
                                         </div>
@@ -274,8 +326,9 @@ const activeRoundRecap = computed(() => {
                                         
                                         <!-- Yellow Total -->
                                         <div :class="[
-                                            'flex items-center justify-center rounded-md border-[1.5px] font-black text-2xl tabular-nums tracking-tighter', 
-                                            jury.yellow_total > 200 ? 'bg-red-600 border-red-500 text-white' : 'bg-zinc-800/80 border-yellow-500/40 text-white'
+                                            'flex items-center justify-center rounded-md border-[1.5px] font-black text-2xl tabular-nums tracking-tighter transition-colors', 
+                                            jury.yellow_total > 200 ? 'bg-red-600 border-red-500 text-white' : 
+                                            (jury.jury_winner === 'yellow' ? 'bg-yellow-500 border-yellow-400 text-black shadow-[0_0_15px_rgba(234,179,8,0.4)]' : 'bg-zinc-800/80 border-yellow-500/40 text-yellow-100/70')
                                         ]">
                                             {{ jury.yellow_total }}
                                         </div>
@@ -283,8 +336,8 @@ const activeRoundRecap = computed(() => {
                                         <!-- Yellow Nilai -->
                                         <div class="bg-zinc-800 border-[1.5px] border-yellow-500/40 rounded-md px-4 py-2 flex flex-wrap content-center gap-1.5 justify-end overflow-hidden">
                                             <template v-for="(p, i) in jury.yellow_details" :key="'yn'+i">
-                                                <span v-if="p.ref_score_id" class="text-white text-[1.1rem] font-bold leading-none">{{ p.score?.name }},</span>
-                                                <span v-else-if="p.ref_punishment_id" class="text-red-500 text-[1.1rem] font-bold leading-none">{{ p.punishment?.name }},</span>
+                                                <span v-if="p.ref_score_id" :class="[p.is_valid ? 'text-green-500' : 'text-white', 'text-[1.1rem] font-bold leading-none']">{{ p.score?.name }},</span>
+                                                <span v-else-if="p.ref_punishment_id" :class="[p.is_valid ? 'text-red-500 underline decoration-green-500 underline-offset-4 decoration-2' : 'text-red-500', 'text-[1.1rem] font-bold leading-none']">{{ p.punishment?.name }},</span>
                                             </template>
                                         </div>
                                         

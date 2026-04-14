@@ -54,6 +54,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::post('/partai/update-status', [\App\Http\Controllers\Api\MatchSyncController::class, 'updateStatus']);
         Route::post('/partai/update-round', [\App\Http\Controllers\Api\MatchSyncController::class, 'updateRound']);
         Route::post('/partai/update-round-winner', [\App\Http\Controllers\Api\MatchSyncController::class, 'updateRoundWinner']);
+        Route::post('/partai/save-partai-data-ts/{partai_id}', [\App\Http\Controllers\Api\MatchSyncController::class, 'savePartaiDataTs']);
 
         // Jury Scoring Inputs
         Route::post('/jury/score', [\App\Http\Controllers\Api\JuryScoreController::class, 'storeScore']);
