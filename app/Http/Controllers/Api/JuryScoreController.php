@@ -88,20 +88,28 @@ class JuryScoreController extends Controller
             // 3. Broadcast ActiveMatch updated (Since no fields changed directly in Match, this just signals UI refresh if needed)
             $match = FightMatch::find($validated['partai_id']);
             if ($match) {
-                broadcast(new ActiveMatchUpdated($match))->toOthers();
+                try {
+                    broadcast(new ActiveMatchUpdated($match))->toOthers();
+                } catch (\Exception $e) {
+                    \Log::warning("Broadcasting ActiveMatchUpdated failed: " . $e->getMessage());
+                }
             }
 
             DB::commit();
 
             // 4. Broadcast Jury Recap Event
-            broadcast(new JuryScoreUpdated(
-                $validated['partai_id'],
-                $validated['corner'],
-                $validated['round_number'],
-                $validated['jury_number'],
-                $detailModel->toArray(),
-                $recap ? $recap->toArray() : null
-            ))->toOthers();
+            try {
+                broadcast(new JuryScoreUpdated(
+                    $validated['partai_id'],
+                    $validated['corner'],
+                    $validated['round_number'],
+                    $validated['jury_number'],
+                    $detailModel->toArray(),
+                    $recap ? $recap->toArray() : null
+                ))->toOthers();
+            } catch (\Exception $e) {
+                \Log::warning("Broadcasting JuryScoreUpdated failed: " . $e->getMessage());
+            }
 
             return response()->json([
                 'success' => true,
@@ -173,20 +181,28 @@ class JuryScoreController extends Controller
             // Re-calculate Match's Total System Score - no longer applies to match, so we just trigger active match refreshed
             $match = FightMatch::find($validated['partai_id']);
             if ($match) {
-                broadcast(new ActiveMatchUpdated($match))->toOthers();
+                try {
+                    broadcast(new ActiveMatchUpdated($match))->toOthers();
+                } catch (\Exception $e) {
+                    \Log::warning("Broadcasting ActiveMatchUpdated failed: " . $e->getMessage());
+                }
             }
 
             DB::commit();
 
             // Broadcast Event with null detail to signify deletion
-            broadcast(new JuryScoreUpdated(
-                $validated['partai_id'],
-                $validated['corner'],
-                $validated['round_number'],
-                $validated['jury_number'],
-                ['id' => $id, 'deleted' => true],
-                $recap ? $recap->toArray() : null
-            ))->toOthers();
+            try {
+                broadcast(new JuryScoreUpdated(
+                    $validated['partai_id'],
+                    $validated['corner'],
+                    $validated['round_number'],
+                    $validated['jury_number'],
+                    ['id' => $id, 'deleted' => true],
+                    $recap ? $recap->toArray() : null
+                ))->toOthers();
+            } catch (\Exception $e) {
+                \Log::warning("Broadcasting JuryScoreUpdated failed: " . $e->getMessage());
+            }
 
             return response()->json([
                 'success' => true,

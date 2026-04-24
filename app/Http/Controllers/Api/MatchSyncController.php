@@ -36,7 +36,11 @@ class MatchSyncController extends Controller
         }
 
         // Broadcast real-time update
-        broadcast(new ActiveMatchUpdated($match->fresh()))->toOthers();
+        try {
+            broadcast(new ActiveMatchUpdated($match->fresh()))->toOthers();
+        } catch (\Exception $e) {
+            \Log::warning("Broadcasting ActiveMatchUpdated failed: " . $e->getMessage());
+        }
 
         if ($isStartingFirstRound) {
             try {
@@ -73,7 +77,11 @@ class MatchSyncController extends Controller
         $match->update(['round_number' => $validated['round_number']]);
 
         // Broadcast real-time update
-        broadcast(new ActiveMatchUpdated($match->fresh()))->toOthers();
+        try {
+            broadcast(new ActiveMatchUpdated($match->fresh()))->toOthers();
+        } catch (\Exception $e) {
+            \Log::warning("Broadcasting ActiveMatchUpdated failed: " . $e->getMessage());
+        }
 
         return response()->json(['success' => true, 'data' => $match]);
     }
@@ -280,7 +288,11 @@ class MatchSyncController extends Controller
             DB::commit();
 
             // Broadcast real-time update for new match sync
-            broadcast(new ActiveMatchUpdated($match->fresh()))->toOthers();
+            try {
+                broadcast(new ActiveMatchUpdated($match->fresh()))->toOthers();
+            } catch (\Exception $e) {
+                \Log::warning("Broadcasting ActiveMatchUpdated failed: " . $e->getMessage());
+            }
 
             return response()->json([
                 'success' => true,
@@ -426,7 +438,11 @@ class MatchSyncController extends Controller
                 ]);
         }
 
-        broadcast(new ActiveMatchUpdated($match->fresh()))->toOthers();
+        try {
+            broadcast(new ActiveMatchUpdated($match->fresh()))->toOthers();
+        } catch (\Exception $e) {
+            \Log::warning("Broadcasting ActiveMatchUpdated failed: " . $e->getMessage());
+        }
 
         return response()->json([
             'success' => true,

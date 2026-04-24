@@ -18,7 +18,7 @@ class ScoringSourceController extends Controller
 
     private function getBaseUrl()
     {
-        return env('API_SERVER_URL', 'http://127.0.0.1:8000/api');
+        return env('API_URL', 'http://127.0.0.1:8000/api');
     }
 
     public function getGelanggang()
