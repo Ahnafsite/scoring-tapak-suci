@@ -12,6 +12,7 @@ use App\Models\FightRecapJuryPoint;
 use App\Models\FightDetailJuryPointBlue;
 use App\Models\FightDetailJuryPointYellow;
 use App\Events\ActiveMatchUpdated;
+use App\Events\JuryScoreUpdated;
 use App\Enums\WinnerStatus;
 
 class MatchSyncController extends Controller
@@ -90,7 +91,7 @@ class MatchSyncController extends Controller
     {
         $validated = $request->validate([
             'round_number' => 'required|integer|min:1|max:3',
-            'winner' => 'required|in:yellow,blue,draw',
+            'winner' => 'nullable|in:yellow,blue,draw',
         ]);
 
         $recap = FightRecapJuryPoint::firstOrCreate(
@@ -104,6 +105,12 @@ class MatchSyncController extends Controller
         );
 
         $recap->update(['winner' => $validated['winner']]);
+
+        try {
+            broadcast(new JuryScoreUpdated(null, null, $validated['round_number'], null, null, $recap))->toOthers();
+        } catch (\Exception $e) {
+            \Log::warning("Broadcasting JuryScoreUpdated failed: " . $e->getMessage());
+        }
 
         return response()->json(['success' => true, 'data' => $recap]);
     }

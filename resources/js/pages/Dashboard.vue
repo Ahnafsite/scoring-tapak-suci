@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { Head, usePage, Link, router } from '@inertiajs/vue3';
 import { computed } from 'vue';
-import { logout } from '@/routes';
+import { logout, fightMatchControl, fightSecretary, fightJury } from '@/routes';
 import { Button } from '@/components/ui/button';
 import {
     Dialog,
@@ -29,15 +29,22 @@ const handleLogout = () => {
         <div class="flex flex-col items-center justify-center space-y-8">
             <h1 class="text-3xl font-bold tracking-tight">Selamat Datang, {{ userName.replace('Juri', 'Pembantu Wasit') }}</h1>
             
-            <template v-if="page.props.auth?.user?.role?.name === 'Operator' || page.props.auth?.user?.role?.name === 'Sekretaris'">
-                <Link href="/fight-match-control">
+            <template v-if="page.props.auth?.user?.role?.name === 'Operator'">
+                <Link :href="fightMatchControl().url">
                     <Button size="lg" class="text-lg px-8 py-6 rounded-xl font-semibold">
                         Control Panel Tanding
                     </Button>
                 </Link>
             </template>
+            <template v-else-if="page.props.auth?.user?.role?.name === 'Sekretaris'">
+                <Link :href="fightSecretary().url">
+                    <Button size="lg" class="text-lg px-8 py-6 rounded-xl font-semibold">
+                        Sekretaris Pertandingan
+                    </Button>
+                </Link>
+            </template>
             <template v-else-if="page.props.auth?.user?.role?.name === 'Juri'">
-                <Link href="/fight-jury">
+                <Link :href="fightJury().url">
                     <Button size="lg" class="text-lg px-8 py-6 rounded-xl font-semibold">
                         Tanding Olahraga
                     </Button>
