@@ -15,6 +15,7 @@ use App\Models\RefScore;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Validation\Rule;
 
 class MatchSyncController extends Controller
 {
@@ -28,14 +29,17 @@ class MatchSyncController extends Controller
         $match = FightMatch::findOrFail($validated['id']);
 
         $isStartingFirstRound = ($validated['status'] === 'ongoing' && $match->status !== 'ongoing' && $match->round_number == 1);
+        $shouldSyncStatusToServer = $request->boolean('sync_server') || $isStartingFirstRound;
 
         $matchUpdates = ['status' => $validated['status']];
         $clearedRecap = null;
 
-        if ($validated['status'] === 'ongoing') {
+        if (in_array($validated['status'], ['ongoing', 'not_started'], true)) {
             $matchUpdates['winner_corner'] = null;
             $matchUpdates['winner_status'] = null;
+        }
 
+        if ($validated['status'] === 'ongoing') {
             $clearedRecap = FightRecapJuryPoint::where('round_number', $match->round_number)->first();
             $clearedRecap?->update(['winner' => null]);
         }
@@ -44,8 +48,15 @@ class MatchSyncController extends Controller
 
         // Also update related fight_schedule status
         if ($match->fight_schedule_id) {
+            $scheduleUpdates = ['status' => $validated['status']];
+
+            if (in_array($validated['status'], ['ongoing', 'not_started'], true)) {
+                $scheduleUpdates['winner_corner'] = null;
+                $scheduleUpdates['winner_status'] = null;
+            }
+
             FightSchedule::where('id', $match->fight_schedule_id)
-                ->update(['status' => $validated['status']]);
+                ->update($scheduleUpdates);
         }
 
         // Broadcast real-time update
@@ -63,10 +74,11 @@ class MatchSyncController extends Controller
             }
         }
 
-        if ($isStartingFirstRound) {
+        if ($shouldSyncStatusToServer) {
             try {
                 $apiUrl = rtrim(env('API_URL'), '/');
                 $apiKey = env('API_KEY');
+                $serverStatus = $validated['status'] === 'not_started' ? 'not_started_yet' : $validated['status'];
 
                 if (! preg_match('~^(?:f|ht)tps?://~i', $apiUrl)) {
                     $apiUrl = 'http://'.$apiUrl;
@@ -77,7 +89,7 @@ class MatchSyncController extends Controller
                     'Accept' => 'application/json',
                     'Content-Type' => 'application/json',
                 ])->post("{$apiUrl}/partai/partai-status/{$match->partai_id}", [
-                    'status' => 'ongoing',
+                    'status' => $serverStatus,
                 ]);
             } catch (\Exception $e) {
                 \Log::error('Failed to update status to server: '.$e->getMessage());
@@ -347,31 +359,32 @@ class MatchSyncController extends Controller
 
     public function savePartaiDataTs(Request $request, $partai_id)
     {
+        $status = $request->input('status', 'done');
+
         $validated = $request->validate([
-            'winner_corner' => 'required|in:yellow,blue,draw',
-            'winner_status' => 'required|string',
+            'status' => ['sometimes', 'in:not_started,done'],
+            'winner_corner' => [Rule::requiredIf($status === 'done'), 'nullable', 'in:yellow,blue,draw'],
+            'winner_status' => [Rule::requiredIf($status === 'done'), 'nullable', 'string'],
         ]);
 
+        $status = $validated['status'] ?? 'done';
+        $serverStatus = $status === 'not_started' ? 'not_started_yet' : $status;
         $match = FightMatch::where('partai_id', $partai_id)->firstOrFail();
 
-        $match->update([
-            'status' => 'done',
-            'winner_corner' => $validated['winner_corner'],
-            'winner_status' => $validated['winner_status'],
-        ]);
-
         // Prepare API Payload for External Tapak Suci Server
-        $recaps = FightRecapJuryPoint::orderBy('round_number')->get();
+        $recaps = $status === 'not_started'
+            ? collect()
+            : FightRecapJuryPoint::orderBy('round_number')->get();
         $totalPoinYellow = $recaps->sum('total_poin_yellow');
         $totalPoinBlue = $recaps->sum('total_poin_blue');
 
         $payload = [
-            'status' => 'done', // The new status after saving
+            'status' => $serverStatus,
             'total_poin_blue' => (string) $totalPoinBlue,
             'total_poin_yellow' => (string) $totalPoinYellow,
-            'round_number' => $match->round_number,
-            'winner_corner' => $validated['winner_corner'],
-            'winner_status' => $validated['winner_status'],
+            'round_number' => $status === 'not_started' ? 1 : $match->round_number,
+            'winner_corner' => $validated['winner_corner'] ?? null,
+            'winner_status' => $validated['winner_status'] ?? null,
         ];
 
         // Format recap for rounds 1, 2, 3
@@ -387,53 +400,71 @@ class MatchSyncController extends Controller
         $juryKeys = [1 => 'juri_one', 2 => 'juri_two', 3 => 'juri_three', 4 => 'juri_four'];
         $words = ['one', 'two', 'three', 'four'];
 
-        foreach ($recaps as $recap) {
-            $rNum = $recap->round_number;
-            if (! isset($roundsMap[$rNum])) {
-                continue;
-            }
-            $rKey = $roundsMap[$rNum];
-
-            $payload[$rKey] = [
-                'round_winner' => $recap->winner,
-            ];
-
-            foreach ($juryKeys as $jNum => $jKey) {
-                // Get detail scores for Blue
-                $bluePoints = FightDetailJuryPointBlue::where('round_number', $rNum)
-                    ->where('jury_number', $jNum)
-                    ->orderBy('id')->get();
-                $arrBlue = [];
-                foreach ($bluePoints as $bp) {
-                    if ($bp->ref_score_id) {
-                        $arrBlue[] = $refScores[$bp->ref_score_id] ?? '';
-                    } elseif ($bp->ref_punishment_id) {
-                        $arrBlue[] = $refPunishments[$bp->ref_punishment_id] ?? '';
-                    }
-                }
-
-                // Get detail scores for Yellow
-                $yellowPoints = FightDetailJuryPointYellow::where('round_number', $rNum)
-                    ->where('jury_number', $jNum)
-                    ->orderBy('id')->get();
-                $arrYellow = [];
-                foreach ($yellowPoints as $yp) {
-                    if ($yp->ref_score_id) {
-                        $arrYellow[] = $refScores[$yp->ref_score_id] ?? '';
-                    } elseif ($yp->ref_punishment_id) {
-                        $arrYellow[] = $refPunishments[$yp->ref_punishment_id] ?? '';
-                    }
-                }
-
-                $word = $words[$jNum - 1];
-
-                $payload[$rKey][$jKey] = [
-                    'detail_score_blue' => $arrBlue,
-                    'detail_score_yellow' => $arrYellow,
-                    'total_poin_blue' => (string) $recap->{"jury_{$word}_total_poin_blue"},
-                    'total_poin_yellow' => (string) $recap->{"jury_{$word}_total_poin_yellow"},
-                    'winner' => $recap->{"jury_{$word}_winner"},
+        if ($status === 'not_started') {
+            foreach ($roundsMap as $rKey) {
+                $payload[$rKey] = [
+                    'round_winner' => null,
                 ];
+
+                foreach ($juryKeys as $jKey) {
+                    $payload[$rKey][$jKey] = [
+                        'detail_score_blue' => [],
+                        'detail_score_yellow' => [],
+                        'total_poin_blue' => '0',
+                        'total_poin_yellow' => '0',
+                        'winner' => null,
+                    ];
+                }
+            }
+        } else {
+            foreach ($recaps as $recap) {
+                $rNum = $recap->round_number;
+                if (! isset($roundsMap[$rNum])) {
+                    continue;
+                }
+                $rKey = $roundsMap[$rNum];
+
+                $payload[$rKey] = [
+                    'round_winner' => $recap->winner,
+                ];
+
+                foreach ($juryKeys as $jNum => $jKey) {
+                    // Get detail scores for Blue
+                    $bluePoints = FightDetailJuryPointBlue::where('round_number', $rNum)
+                        ->where('jury_number', $jNum)
+                        ->orderBy('id')->get();
+                    $arrBlue = [];
+                    foreach ($bluePoints as $bp) {
+                        if ($bp->ref_score_id) {
+                            $arrBlue[] = $refScores[$bp->ref_score_id] ?? '';
+                        } elseif ($bp->ref_punishment_id) {
+                            $arrBlue[] = $refPunishments[$bp->ref_punishment_id] ?? '';
+                        }
+                    }
+
+                    // Get detail scores for Yellow
+                    $yellowPoints = FightDetailJuryPointYellow::where('round_number', $rNum)
+                        ->where('jury_number', $jNum)
+                        ->orderBy('id')->get();
+                    $arrYellow = [];
+                    foreach ($yellowPoints as $yp) {
+                        if ($yp->ref_score_id) {
+                            $arrYellow[] = $refScores[$yp->ref_score_id] ?? '';
+                        } elseif ($yp->ref_punishment_id) {
+                            $arrYellow[] = $refPunishments[$yp->ref_punishment_id] ?? '';
+                        }
+                    }
+
+                    $word = $words[$jNum - 1];
+
+                    $payload[$rKey][$jKey] = [
+                        'detail_score_blue' => $arrBlue,
+                        'detail_score_yellow' => $arrYellow,
+                        'total_poin_blue' => (string) $recap->{"jury_{$word}_total_poin_blue"},
+                        'total_poin_yellow' => (string) $recap->{"jury_{$word}_total_poin_yellow"},
+                        'winner' => $recap->{"jury_{$word}_winner"},
+                    ];
+                }
             }
         }
 
@@ -461,6 +492,27 @@ class MatchSyncController extends Controller
                     'payload' => $payload,
                 ], 400);
             }
+
+            if ($status === 'not_started') {
+                $statusResponse = Http::withHeaders([
+                    'X-API-KEY' => $apiKey,
+                    'Accept' => 'application/json',
+                    'Content-Type' => 'application/json',
+                ])->post("{$apiUrl}/partai/partai-status/{$partai_id}", [
+                    'status' => $serverStatus,
+                ]);
+
+                if (! $statusResponse->successful()) {
+                    \Log::error('Failed resetting partai status on server: '.$statusResponse->body());
+
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'Gagal mengubah status partai ke belum mulai di server scoring.',
+                        'error' => $statusResponse->json() ?? $statusResponse->body(),
+                        'payload' => $payload,
+                    ], 400);
+                }
+            }
         } catch (\Exception $e) {
             \Log::error('Exception saving partai to server: '.$e->getMessage());
 
@@ -472,12 +524,42 @@ class MatchSyncController extends Controller
             ], 500);
         }
 
-        if ($match->fight_schedule_id) {
-            FightSchedule::where('id', $match->fight_schedule_id)
-                ->update([
-                    'status' => 'done',
-                    'winner_corner' => $validated['winner_corner'],
+        if ($status === 'not_started') {
+            DB::transaction(function () use ($match): void {
+                FightDetailJuryPointBlue::query()->delete();
+                FightDetailJuryPointYellow::query()->delete();
+                FightRecapJuryPoint::query()->delete();
+
+                $match->update([
+                    'status' => 'not_started',
+                    'round_number' => 1,
+                    'winner_corner' => null,
+                    'winner_status' => null,
                 ]);
+
+                if ($match->fight_schedule_id) {
+                    FightSchedule::where('id', $match->fight_schedule_id)
+                        ->update([
+                            'status' => 'not_started',
+                            'winner_corner' => null,
+                            'winner_status' => null,
+                        ]);
+                }
+            });
+        } else {
+            $match->update([
+                'status' => 'done',
+                'winner_corner' => $validated['winner_corner'],
+                'winner_status' => $validated['winner_status'],
+            ]);
+
+            if ($match->fight_schedule_id) {
+                FightSchedule::where('id', $match->fight_schedule_id)
+                    ->update([
+                        'status' => 'done',
+                        'winner_corner' => $validated['winner_corner'],
+                    ]);
+            }
         }
 
         try {

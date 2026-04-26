@@ -42,6 +42,8 @@ const selectedMatch = ref<any>(null);
 const currentMatchDetail = ref<any>(props.activeMatch || null);
 const currentRecapDetail = ref<any>(props.recapJuryPoint || null);
 const isSyncing = ref(false);
+const isResetDialogOpen = ref(false);
+const isResetting = ref(false);
 
 const isWinnerDialogOpen = ref(false);
 const suggestedWinner = ref('');
@@ -134,6 +136,16 @@ const refreshSchedule = async () => {
     } finally {
         isRefreshing.value = false;
     }
+};
+
+const refreshArenaSchedules = async () => {
+    if (!props.arena?.gelanggang_id || !props.arena?.sesi_tanding_id) return;
+
+    await axios.post('/api/arena/setup', {
+        gelanggang_id: props.arena.gelanggang_id,
+        sesi_tanding_id: props.arena.sesi_tanding_id,
+        arena_name: props.arena.arena_name ?? null,
+    });
 };
 
 const statusConfig: Record<string, { label: string; class: string }> = {
@@ -315,7 +327,8 @@ const saveMatchWinner = async () => {
         currentMatchDetail.value = response.data.data;
         isMatchWinnerDialogOpen.value = false;
         localStorage.removeItem('pending_keputusan_match_code');
-        router.reload({ only: ['schedules', 'activeMatch'] });
+        await refreshArenaSchedules();
+        router.reload({ only: ['schedules', 'arena', 'activeMatch'] });
     } catch (e) {
         console.error('Failed to save match winner', e);
     } finally {
@@ -332,7 +345,54 @@ const cancelMatchWinner = () => {
 };
 
 const triggerReset = () => {
-    setStatus('not_started');
+    isResetDialogOpen.value = true;
+};
+
+const confirmReset = async () => {
+    if (!currentMatchDetail.value) return;
+
+    isResetting.value = true;
+
+    try {
+        const matchId = currentMatchDetail.value.id;
+        const partaiId = currentMatchDetail.value.partai_id;
+
+        await axios.post(`/api/partai/save-partai-data-ts/${partaiId}`, {
+            status: 'not_started',
+            winner_corner: null,
+            winner_status: null,
+        });
+
+        const response = await axios.post('/api/partai/update-status', {
+            id: matchId,
+            status: 'not_started',
+            sync_server: true,
+        });
+
+        if (response.data?.data) {
+            currentMatchDetail.value = response.data.data;
+        } else {
+            currentMatchDetail.value.status = 'not_started';
+            currentMatchDetail.value.round_number = 1;
+            currentMatchDetail.value.winner_corner = null;
+            currentMatchDetail.value.winner_status = null;
+        }
+
+        currentRecapDetail.value = [];
+        localStorage.removeItem('pending_keputusan_match_code');
+        localStorage.removeItem(`pending_round_decision_${currentMatchDetail.value.match_code}`);
+
+        await refreshArenaSchedules();
+        router.reload({ only: ['schedules', 'arena', 'activeMatch', 'recapJuryPoint'] });
+
+        isResetDialogOpen.value = false;
+        toast.success('Pertandingan berhasil direset.');
+    } catch (e) {
+        console.error('Failed to reset match', e);
+        toast.error('Gagal reset pertandingan.');
+    } finally {
+        isResetting.value = false;
+    }
 };
 
 const triggerDiskualifikasi = () => {
@@ -969,8 +1029,8 @@ onUnmounted(() => {
                          </Button>
 
                          <!-- Reset (When paused or done) -->
-                         <Button v-if="['paused', 'done'].includes(currentMatchDetail.status)" variant="destructive" class="font-bold tracking-wider" @click="triggerReset()">
-                             RESET
+                         <Button v-if="['paused', 'done'].includes(currentMatchDetail.status)" variant="destructive" class="font-bold tracking-wider" @click="triggerReset()" :disabled="isResetting">
+                             {{ isResetting ? 'RESETTING...' : 'RESET' }}
                          </Button>
                      </div>
 
@@ -1078,6 +1138,28 @@ onUnmounted(() => {
                     <Button @click="syncMatch" :disabled="isSyncing">
                         <RefreshCw v-if="isSyncing" class="w-4 h-4 mr-2 animate-spin" />
                         Ya, Muat Data
+                    </Button>
+                </DialogFooter>
+            </DialogContent>
+        </Dialog>
+
+        <!-- Reset Confirm Dialog -->
+        <Dialog :open="isResetDialogOpen" @update:open="isResetDialogOpen = $event">
+            <DialogContent class="sm:max-w-[400px]">
+                <DialogHeader class="pb-2">
+                    <DialogTitle class="text-xl font-bold text-primary">Reset Pertandingan ?</DialogTitle>
+                    <DialogDescription class="text-muted-foreground text-sm pt-2">
+                        Ini akan menghapus penilaian pada partai ini.
+                    </DialogDescription>
+                </DialogHeader>
+
+                <DialogFooter class="pt-2">
+                    <Button variant="ghost" @click="isResetDialogOpen = false" :disabled="isResetting">
+                        Batal
+                    </Button>
+                    <Button variant="destructive" @click="confirmReset" :disabled="isResetting">
+                        <RefreshCw v-if="isResetting" class="w-4 h-4 mr-2 animate-spin" />
+                        {{ isResetting ? 'Mereset...' : 'Ya' }}
                     </Button>
                 </DialogFooter>
             </DialogContent>
