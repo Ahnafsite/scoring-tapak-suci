@@ -56,6 +56,10 @@ const selectedMatchWinner = ref('');
 const selectedWinnerStatus = ref('menang_angka');
 const isSavingMatchWinner = ref(false);
 
+const isDisqualificationDialogOpen = ref(false);
+const selectedDisqualifiedCorner = ref('');
+const isSavingDisqualification = ref(false);
+
 const gelanggangList = ref<any[]>([]);
 const sesiList = ref<any[]>([]);
 
@@ -396,7 +400,43 @@ const confirmReset = async () => {
 };
 
 const triggerDiskualifikasi = () => {
-    console.log("Trigger Diskualifikasi (Future Implementation)");
+    if (!currentMatchDetail.value) {
+        toast.error('Pilih partai terlebih dahulu.');
+        return;
+    }
+
+    selectedDisqualifiedCorner.value = '';
+    isDisqualificationDialogOpen.value = true;
+};
+
+const saveDisqualification = async () => {
+    if (!currentMatchDetail.value || !selectedDisqualifiedCorner.value) return;
+
+    isSavingDisqualification.value = true;
+
+    try {
+        const winnerCorner = selectedDisqualifiedCorner.value === 'yellow' ? 'blue' : 'yellow';
+        const response = await axios.post(`/api/partai/save-partai-data-ts/${currentMatchDetail.value.partai_id}`, {
+            winner_corner: winnerCorner,
+            winner_status: 'menang_diskualifikasi',
+        });
+
+        currentMatchDetail.value = response.data.data;
+        localStorage.removeItem('pending_keputusan_match_code');
+        localStorage.removeItem(`pending_round_decision_${currentMatchDetail.value.match_code}`);
+
+        await refreshArenaSchedules();
+        router.reload({ only: ['schedules', 'arena', 'activeMatch'] });
+
+        isDisqualificationDialogOpen.value = false;
+        selectedDisqualifiedCorner.value = '';
+        toast.success('Diskualifikasi berhasil disimpan.');
+    } catch (e) {
+        console.error('Failed to save disqualification', e);
+        toast.error('Gagal menyimpan diskualifikasi.');
+    } finally {
+        isSavingDisqualification.value = false;
+    }
 };
 
 const openMatch = (match: any) => {
@@ -793,8 +833,8 @@ onUnmounted(() => {
             <Separator />
 
             <div class="h-[72px] flex items-center p-4 border-t border-stone-800 shrink-0">
-                <Button @click="triggerDiskualifikasi()" variant="destructive" class="w-full text-xs font-bold uppercase tracking-wider">
-                    DISKUALIFIKASI
+                <Button @click="triggerDiskualifikasi()" variant="destructive" class="w-full text-xs font-bold uppercase tracking-wider" :disabled="!currentMatchDetail || isSavingDisqualification">
+                    {{ isSavingDisqualification ? 'MENYIMPAN...' : 'DISKUALIFIKASI' }}
                 </Button>
             </div>
         </div>
@@ -846,7 +886,7 @@ onUnmounted(() => {
                          <!-- Middle Neutral Column -->
                          <div class="w-64 bg-zinc-950 flex flex-col items-center justify-start shrink-0 z-20 border-x border-stone-800 relative shadow-2xl py-6">
                              <div class="text-xs text-stone-200 uppercase tracking-widest font-black mb-8 w-full text-center border-b border-stone-800 pb-4">
-                                 Pemenang Ronde
+                                 PARTAI {{ currentMatchDetail.match_code || '-' }}
                              </div>
                              
                              <div class="flex flex-col gap-8 w-full px-6 flex-1 justify-center relative -mt-4">
@@ -891,7 +931,7 @@ onUnmounted(() => {
                                  <!-- R3 -->
                                  <div class="flex flex-col items-center relative group">
                                      <div class="text-[10px] text-stone-500 font-black uppercase tracking-widest absolute -top-3 bg-zinc-950 px-2 rounded-full z-10 transition-colors">
-                                         Ronde 3
+                                         Ronde Tambahan
                                      </div>
                                      <div :class="[
                                          'w-full py-5 text-center text-xl font-black uppercase tracking-wider rounded-xl border transition-all duration-300 shadow-lg relative overflow-hidden',
@@ -903,6 +943,24 @@ onUnmounted(() => {
                                          <span v-if="getRoundWinner(3) === 'yellow'">Kuning</span>
                                          <span v-else-if="getRoundWinner(3) === 'blue'">Biru</span>
                                          <span v-else-if="getRoundWinner(3) === 'draw'">Seri</span>
+                                         <span v-else>-</span>
+                                     </div>
+                                 </div>
+
+                                 <div class="flex flex-col items-center relative group">
+                                     <div class="text-[10px] text-stone-500 font-black uppercase tracking-widest absolute -top-3 bg-zinc-950 px-2 rounded-full z-10 transition-colors">
+                                         Pemenang
+                                     </div>
+                                     <div :class="[
+                                         'w-full py-5 text-center text-xl font-black uppercase tracking-wider rounded-xl border transition-all duration-300 shadow-lg relative overflow-hidden',
+                                         currentMatchDetail.winner_corner === 'yellow' ? 'bg-yellow-400 text-black border-yellow-500' :
+                                         currentMatchDetail.winner_corner === 'blue' ? 'bg-blue-600 text-white border-blue-500' :
+                                         currentMatchDetail.winner_corner === 'draw' ? 'bg-stone-500 text-white border-stone-400' :
+                                         'bg-zinc-900 border-stone-800 text-stone-700 shadow-none'
+                                     ]">
+                                         <span v-if="currentMatchDetail.winner_corner === 'yellow'">Kuning</span>
+                                         <span v-else-if="currentMatchDetail.winner_corner === 'blue'">Biru</span>
+                                         <span v-else-if="currentMatchDetail.winner_corner === 'draw'">Seri</span>
                                          <span v-else>-</span>
                                      </div>
                                  </div>
@@ -1138,6 +1196,55 @@ onUnmounted(() => {
                     <Button @click="syncMatch" :disabled="isSyncing">
                         <RefreshCw v-if="isSyncing" class="w-4 h-4 mr-2 animate-spin" />
                         Ya, Muat Data
+                    </Button>
+                </DialogFooter>
+            </DialogContent>
+        </Dialog>
+
+        <!-- Disqualification Dialog -->
+        <Dialog :open="isDisqualificationDialogOpen" @update:open="isDisqualificationDialogOpen = $event">
+            <DialogContent class="sm:max-w-[440px]">
+                <DialogHeader class="pb-2">
+                    <DialogTitle class="text-xl font-bold text-primary">Diskualifikasi Atlet</DialogTitle>
+                    <DialogDescription class="text-muted-foreground text-sm pt-2">
+                        Pilih atlet yang akan didiskualifikasi.
+                    </DialogDescription>
+                </DialogHeader>
+
+                <div class="grid gap-3 py-2">
+                    <Label class="text-muted-foreground text-xs font-bold uppercase tracking-wider">Pilih Atlet Diskualifikasi</Label>
+                    <div class="grid grid-cols-2 gap-3">
+                        <div
+                            @click="!isSavingDisqualification && (selectedDisqualifiedCorner = 'yellow')"
+                            :class="['cursor-pointer border-2 rounded-xl flex flex-col items-center justify-center p-4 text-center transition-all', selectedDisqualifiedCorner === 'yellow' ? 'border-yellow-500 bg-yellow-500/20' : 'border-stone-800 hover:border-yellow-500/50', isSavingDisqualification ? 'pointer-events-none opacity-60' : '']"
+                        >
+                            <div :class="['w-4 h-4 rounded-full border mb-2 flex items-center justify-center', selectedDisqualifiedCorner === 'yellow' ? 'border-yellow-500 bg-yellow-500/20' : 'border-stone-600']">
+                                <div v-if="selectedDisqualifiedCorner === 'yellow'" class="w-2 h-2 rounded-full bg-yellow-500"></div>
+                            </div>
+                            <span class="text-xs font-black uppercase tracking-wider text-yellow-500">Kuning</span>
+                            <span class="mt-1 text-sm font-bold uppercase leading-snug text-foreground">{{ currentMatchDetail?.atlete_yellow || '-' }}</span>
+                        </div>
+
+                        <div
+                            @click="!isSavingDisqualification && (selectedDisqualifiedCorner = 'blue')"
+                            :class="['cursor-pointer border-2 rounded-xl flex flex-col items-center justify-center p-4 text-center transition-all', selectedDisqualifiedCorner === 'blue' ? 'border-blue-500 bg-blue-500/20' : 'border-stone-800 hover:border-blue-500/50', isSavingDisqualification ? 'pointer-events-none opacity-60' : '']"
+                        >
+                            <div :class="['w-4 h-4 rounded-full border mb-2 flex items-center justify-center', selectedDisqualifiedCorner === 'blue' ? 'border-blue-500 bg-blue-500/20' : 'border-stone-600']">
+                                <div v-if="selectedDisqualifiedCorner === 'blue'" class="w-2 h-2 rounded-full bg-blue-500"></div>
+                            </div>
+                            <span class="text-xs font-black uppercase tracking-wider text-blue-400">Biru</span>
+                            <span class="mt-1 text-sm font-bold uppercase leading-snug text-foreground">{{ currentMatchDetail?.atlete_blue || '-' }}</span>
+                        </div>
+                    </div>
+                </div>
+
+                <DialogFooter class="pt-2">
+                    <Button variant="ghost" @click="isDisqualificationDialogOpen = false" :disabled="isSavingDisqualification">
+                        Batal
+                    </Button>
+                    <Button variant="destructive" @click="saveDisqualification" :disabled="!selectedDisqualifiedCorner || isSavingDisqualification">
+                        <RefreshCw v-if="isSavingDisqualification" class="w-4 h-4 mr-2 animate-spin" />
+                        {{ isSavingDisqualification ? 'Menyimpan...' : 'Simpan' }}
                     </Button>
                 </DialogFooter>
             </DialogContent>

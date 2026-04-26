@@ -3,7 +3,7 @@ import { Head, usePage, router } from '@inertiajs/vue3';
 import { computed, ref, onMounted, onUnmounted, watch } from 'vue';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { Bell, Delete } from 'lucide-vue-next';
+import { Delete } from 'lucide-vue-next';
 import axios from 'axios';
 
 const props = defineProps<{
@@ -345,16 +345,13 @@ onUnmounted(() => {
                         <button @click="submitScore('yellow', 'score', 1)" class="bg-yellow-400 hover:bg-yellow-500 text-black font-black text-2xl rounded-md transition-colors flex items-center justify-center">20</button>
                         <button @click="submitScore('yellow', 'score', 3)" class="bg-yellow-400 hover:bg-yellow-500 text-black font-black text-2xl rounded-md transition-colors flex items-center justify-center">30</button>
                         <button @click="submitScore('yellow', 'score', 5)" class="bg-yellow-400 hover:bg-yellow-500 text-black font-black text-2xl rounded-md transition-colors flex items-center justify-center">40</button>
-                        <button class="bg-yellow-400 hover:bg-yellow-500 text-black font-black text-2xl rounded-md transition-colors flex items-center justify-center">
-                            <Bell class="w-8 h-8 stroke-[3]" />
+                        <button @click="deleteLastScore('yellow')" class="row-span-2 bg-yellow-400 hover:bg-yellow-500 text-black font-black text-2xl rounded-md transition-colors flex items-center justify-center">
+                            <Delete class="w-10 h-10 stroke-[3]" />
                         </button>
                         
                         <button @click="submitScore('yellow', 'score', 2)" class="bg-yellow-400 hover:bg-yellow-500 text-black font-black text-2xl rounded-md transition-colors flex items-center justify-center">10+20</button>
                         <button @click="submitScore('yellow', 'score', 4)" class="bg-yellow-400 hover:bg-yellow-500 text-black font-black text-2xl rounded-md transition-colors flex items-center justify-center">10+30</button>
                         <button @click="submitScore('yellow', 'score', 6)" class="bg-yellow-400 hover:bg-yellow-500 text-black font-black text-2xl rounded-md transition-colors flex items-center justify-center">10+40</button>
-                        <button @click="deleteLastScore('yellow')" class="bg-yellow-400 hover:bg-yellow-500 text-black font-black text-2xl rounded-md transition-colors flex items-center justify-center">
-                            <Delete class="w-8 h-8 stroke-[3]" />
-                        </button>
 
                         <button @click="submitScore('yellow', 'punishment', 1)" class="bg-yellow-400 hover:bg-yellow-500 text-black font-black text-2xl rounded-md transition-colors flex items-center justify-center">-10</button>
                         <button @click="submitScore('yellow', 'punishment', 2)" class="bg-yellow-400 hover:bg-yellow-500 text-black font-black text-2xl rounded-md transition-colors flex items-center justify-center">-20</button>
@@ -372,16 +369,13 @@ onUnmounted(() => {
                         <button @click="submitScore('blue', 'score', 1)" class="bg-blue-600 hover:bg-blue-500 text-white font-black text-2xl rounded-md transition-colors flex items-center justify-center">20</button>
                         <button @click="submitScore('blue', 'score', 3)" class="bg-blue-600 hover:bg-blue-500 text-white font-black text-2xl rounded-md transition-colors flex items-center justify-center">30</button>
                         <button @click="submitScore('blue', 'score', 5)" class="bg-blue-600 hover:bg-blue-500 text-white font-black text-2xl rounded-md transition-colors flex items-center justify-center">40</button>
-                        <button class="bg-blue-600 hover:bg-blue-500 text-white font-black text-2xl rounded-md transition-colors flex items-center justify-center">
-                            <Bell class="w-8 h-8 stroke-[3]" />
+                        <button @click="deleteLastScore('blue')" class="row-span-2 bg-blue-600 hover:bg-blue-500 text-white font-black text-2xl rounded-md transition-colors flex items-center justify-center">
+                            <Delete class="w-10 h-10 stroke-[3]" />
                         </button>
 
                         <button @click="submitScore('blue', 'score', 2)" class="bg-blue-600 hover:bg-blue-500 text-white font-black text-2xl rounded-md transition-colors flex items-center justify-center">10+20</button>
                         <button @click="submitScore('blue', 'score', 4)" class="bg-blue-600 hover:bg-blue-500 text-white font-black text-2xl rounded-md transition-colors flex items-center justify-center">10+30</button>
                         <button @click="submitScore('blue', 'score', 6)" class="bg-blue-600 hover:bg-blue-500 text-white font-black text-2xl rounded-md transition-colors flex items-center justify-center">10+40</button>
-                        <button @click="deleteLastScore('blue')" class="bg-blue-600 hover:bg-blue-500 text-white font-black text-2xl rounded-md transition-colors flex items-center justify-center">
-                            <Delete class="w-8 h-8 stroke-[3]" />
-                        </button>
 
                         <button @click="submitScore('blue', 'punishment', 1)" class="bg-blue-600 hover:bg-blue-500 text-white font-black text-2xl rounded-md transition-colors flex items-center justify-center">-10</button>
                         <button @click="submitScore('blue', 'punishment', 2)" class="bg-blue-600 hover:bg-blue-500 text-white font-black text-2xl rounded-md transition-colors flex items-center justify-center">-20</button>

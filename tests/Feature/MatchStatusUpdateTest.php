@@ -224,4 +224,139 @@ class MatchStatusUpdateTest extends TestCase
         Http::assertSent(fn ($request) => str_contains($request->url(), '/partai/partai-status/P-002')
             && $request['status'] === 'not_started_yet');
     }
+
+    public function test_save_partai_data_ts_disqualification_keeps_match_and_clears_scores(): void
+    {
+        Http::fake([
+            '*' => Http::response(['success' => true], 200),
+        ]);
+
+        $operator = Role::create(['name' => 'Operator']);
+        $user = User::factory()->create(['role_id' => $operator->id]);
+        $schedule = FightSchedule::create([
+            'partai_id' => 'P-003',
+            'status' => 'paused',
+        ]);
+        $match = FightMatch::create([
+            'fight_schedule_id' => $schedule->id,
+            'partai_id' => 'P-003',
+            'status' => 'paused',
+            'round_number' => 2,
+        ]);
+        FightRecapJuryPoint::create([
+            'round_number' => 1,
+            'total_poin_yellow' => 10,
+            'total_poin_blue' => 5,
+            'winner' => 'yellow',
+        ]);
+        FightDetailJuryPointBlue::create([
+            'jury_number' => 1,
+            'round_number' => 1,
+        ]);
+        FightDetailJuryPointYellow::create([
+            'jury_number' => 1,
+            'round_number' => 1,
+        ]);
+
+        $response = $this
+            ->actingAs($user)
+            ->postJson('/api/partai/save-partai-data-ts/P-003', [
+                'winner_corner' => 'blue',
+                'winner_status' => 'menang_diskualifikasi',
+            ]);
+
+        $response
+            ->assertOk()
+            ->assertJsonPath('data.status', 'done')
+            ->assertJsonPath('data.winner_corner', 'blue')
+            ->assertJsonPath('data.winner_status', 'menang_diskualifikasi');
+
+        $this->assertDatabaseCount('fight_matches', 1);
+        $this->assertDatabaseHas('fight_matches', [
+            'id' => $match->id,
+            'status' => 'done',
+            'winner_corner' => 'blue',
+            'winner_status' => 'menang_diskualifikasi',
+        ]);
+        $this->assertDatabaseHas('fight_schedules', [
+            'id' => $schedule->id,
+            'status' => 'done',
+            'winner_corner' => 'blue',
+            'winner_status' => 'menang_diskualifikasi',
+        ]);
+        $this->assertDatabaseCount('fight_recap_jury_points', 0);
+        $this->assertDatabaseCount('fight_detail_jury_point_blues', 0);
+        $this->assertDatabaseCount('fight_detail_jury_point_yellows', 0);
+
+        Http::assertSent(fn ($request) => str_contains($request->url(), '/partai/save-partai-data-ts/P-003')
+            && $request['status'] === 'done'
+            && $request['winner_corner'] === 'blue'
+            && $request['winner_status'] === 'menang_diskualifikasi');
+    }
+
+    public function test_setup_arena_refresh_preserves_existing_fight_match(): void
+    {
+        Http::fake([
+            '*' => Http::response([
+                'success' => true,
+                'data' => [
+                    [
+                        'id' => 'P-004',
+                        'match_code' => '004',
+                        'match_number' => 4,
+                        'atlete_red' => 'Atlet Kuning',
+                        'atlete_blue' => 'Atlet Biru',
+                        'contingent_red' => 'Kontingen Kuning',
+                        'contingent_blue' => 'Kontingen Biru',
+                        'match_round' => 'Final',
+                        'category' => 'Dewasa',
+                        'group' => 'A',
+                        'status' => 'done',
+                        'winner_corner' => 'blue',
+                        'winner_status' => 'menang_diskualifikasi',
+                    ],
+                ],
+            ], 200),
+        ]);
+
+        $operator = Role::create(['name' => 'Operator']);
+        $user = User::factory()->create(['role_id' => $operator->id]);
+        $oldSchedule = FightSchedule::create([
+            'partai_id' => 'P-004',
+            'status' => 'paused',
+        ]);
+        $match = FightMatch::create([
+            'fight_schedule_id' => $oldSchedule->id,
+            'partai_id' => 'P-004',
+            'status' => 'done',
+            'winner_corner' => 'blue',
+            'winner_status' => 'menang_diskualifikasi',
+        ]);
+
+        $response = $this
+            ->actingAs($user)
+            ->postJson('/api/arena/setup', [
+                'gelanggang_id' => 1,
+                'sesi_tanding_id' => 1,
+                'arena_name' => 'Arena 1',
+            ]);
+
+        $response->assertOk();
+
+        $this->assertDatabaseCount('fight_matches', 1);
+        $this->assertDatabaseHas('fight_matches', [
+            'id' => $match->id,
+            'partai_id' => 'P-004',
+            'status' => 'done',
+            'winner_corner' => 'blue',
+            'winner_status' => 'menang_diskualifikasi',
+        ]);
+
+        $refreshedSchedule = FightSchedule::where('partai_id', 'P-004')->firstOrFail();
+
+        $this->assertDatabaseHas('fight_matches', [
+            'id' => $match->id,
+            'fight_schedule_id' => $refreshedSchedule->id,
+        ]);
+    }
 }

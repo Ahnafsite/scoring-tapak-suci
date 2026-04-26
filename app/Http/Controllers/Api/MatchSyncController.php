@@ -524,6 +524,9 @@ class MatchSyncController extends Controller
             ], 500);
         }
 
+        $isDisqualification = $status === 'done'
+            && ($validated['winner_status'] ?? null) === 'menang_diskualifikasi';
+
         if ($status === 'not_started') {
             DB::transaction(function () use ($match): void {
                 FightDetailJuryPointBlue::query()->delete();
@@ -546,6 +549,27 @@ class MatchSyncController extends Controller
                         ]);
                 }
             });
+        } elseif ($isDisqualification) {
+            DB::transaction(function () use ($match, $validated): void {
+                FightDetailJuryPointBlue::query()->delete();
+                FightDetailJuryPointYellow::query()->delete();
+                FightRecapJuryPoint::query()->delete();
+
+                $match->update([
+                    'status' => 'done',
+                    'winner_corner' => $validated['winner_corner'],
+                    'winner_status' => $validated['winner_status'],
+                ]);
+
+                if ($match->fight_schedule_id) {
+                    FightSchedule::where('id', $match->fight_schedule_id)
+                        ->update([
+                            'status' => 'done',
+                            'winner_corner' => $validated['winner_corner'],
+                            'winner_status' => $validated['winner_status'],
+                        ]);
+                }
+            });
         } else {
             $match->update([
                 'status' => 'done',
@@ -558,6 +582,7 @@ class MatchSyncController extends Controller
                     ->update([
                         'status' => 'done',
                         'winner_corner' => $validated['winner_corner'],
+                        'winner_status' => $validated['winner_status'],
                     ]);
             }
         }
