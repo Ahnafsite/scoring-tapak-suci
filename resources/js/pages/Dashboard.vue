@@ -1,13 +1,7 @@
 <script setup lang="ts">
 import { Head, usePage, Link, router } from '@inertiajs/vue3';
+import { LogOut } from 'lucide-vue-next';
 import { computed } from 'vue';
-import {
-    logout,
-    fightMatchControl,
-    fightSecretary,
-    fightStreaming,
-    fightJury,
-} from '@/routes';
 import { Button } from '@/components/ui/button';
 import {
     Dialog,
@@ -19,7 +13,14 @@ import {
     DialogTitle,
     DialogTrigger,
 } from '@/components/ui/dialog';
-import { LogOut } from 'lucide-vue-next';
+import {
+    logout,
+    fightMatchControl,
+    fightSecretary,
+    fightStreaming,
+    fightJury,
+    timer,
+} from '@/routes';
 
 const page = usePage<any>();
 const userName = computed(() => page.props.auth?.user?.name || 'User');
@@ -80,6 +81,16 @@ const handleLogout = () => {
                         class="rounded-xl px-8 py-6 text-lg font-semibold"
                     >
                         Fight Streaming
+                    </Button>
+                </Link>
+            </template>
+            <template v-else-if="page.props.auth?.user?.role?.name === 'Timer'">
+                <Link :href="timer().url">
+                    <Button
+                        size="lg"
+                        class="rounded-xl px-8 py-6 text-lg font-semibold"
+                    >
+                        Timer Pertandingan
                     </Button>
                 </Link>
             </template>

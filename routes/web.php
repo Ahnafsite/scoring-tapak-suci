@@ -3,19 +3,30 @@
 use App\Http\Controllers\Api\JuryScoreController;
 use App\Http\Controllers\Api\MatchSyncController;
 use App\Http\Controllers\Api\ScoringSourceController;
+use App\Http\Controllers\TimerController;
 use App\Models\Arena;
 use App\Models\FightDetailJuryPointBlue;
 use App\Models\FightDetailJuryPointYellow;
 use App\Models\FightMatch;
 use App\Models\FightRecapJuryPoint;
 use App\Models\FightSchedule;
+use App\Models\Timer;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 
 Route::redirect('/', '/login')->name('home');
 
 Route::middleware(['auth', 'verified'])->group(function () {
-    Route::inertia('dashboard', 'Dashboard')->name('dashboard');
+    Route::get('dashboard', function (Request $request) {
+        if ($request->user()->role?->name === 'Timer') {
+            return redirect()->route('timer');
+        }
+
+        return inertia('Dashboard');
+    })->name('dashboard');
+
+    Route::get('timer', [TimerController::class, 'show'])->name('timer');
+
     Route::get('fight-match-control', function (Request $request) {
         if (! in_array($request->user()->role->name, ['Operator'])) {
             abort(403, 'Unauthorized access.');
@@ -54,6 +65,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
             'recapPoints' => FightRecapJuryPoint::all(),
             'yellowPoints' => FightDetailJuryPointYellow::with(['score', 'punishment'])->get(),
             'bluePoints' => FightDetailJuryPointBlue::with(['score', 'punishment'])->get(),
+            'timer' => Timer::current()->toBroadcastPayload(),
         ]);
     })->name('fight-streaming');
 
@@ -85,6 +97,8 @@ Route::middleware(['auth', 'verified'])->group(function () {
         // Jury Scoring Inputs
         Route::post('/jury/score', [JuryScoreController::class, 'storeScore']);
         Route::delete('/jury/score/{id}', [JuryScoreController::class, 'deleteScore']);
+        Route::post('/timer', [TimerController::class, 'update'])->name('timer.update');
+        Route::post('/timer/control', [TimerController::class, 'control'])->name('timer.control');
     });
 });
 

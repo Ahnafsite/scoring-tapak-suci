@@ -31,3 +31,10 @@ declare module 'vue' {
         $headManager: ReturnType<typeof createHeadManager>;
     }
 }
+
+declare global {
+    interface Window {
+        Echo: unknown;
+        Pusher: unknown;
+    }
+}

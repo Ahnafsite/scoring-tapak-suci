@@ -8,13 +8,47 @@ const props = defineProps<{
     recapPoints?: any[];
     yellowPoints?: any[];
     bluePoints?: any[];
+    timer?: TimerState;
 }>();
+
+type TimerState = {
+    id: number | null;
+    is_display: boolean;
+    started_at: string | null;
+    started_at_milliseconds?: number | null;
+    status: 'running' | 'paused' | 'stopped';
+    stored_status?: 'running' | 'paused' | 'stopped';
+    is_countdown: boolean;
+    second: number;
+    is_autostop: boolean;
+    elapsed_seconds: number;
+    elapsed_milliseconds?: number;
+    display_seconds: number;
+    display_milliseconds?: number;
+};
 
 const currentMatch = ref<any>(props.activeMatch ?? null);
 const localRecapPoints = ref<any[]>([...(props.recapPoints || [])]);
 const localYellowPoints = ref<any[]>([...(props.yellowPoints || [])]);
 const localBluePoints = ref<any[]>([...(props.bluePoints || [])]);
 const buzzerAudio = ref<HTMLAudioElement | null>(null);
+const localTimer = ref<TimerState>(
+    props.timer ?? {
+        id: null,
+        is_display: false,
+        started_at: null,
+        started_at_milliseconds: null,
+        status: 'stopped',
+        is_countdown: true,
+        second: 120,
+        is_autostop: false,
+        elapsed_seconds: 0,
+        elapsed_milliseconds: 0,
+        display_seconds: 120,
+        display_milliseconds: 120000,
+    },
+);
+const timerNowTick = ref(Date.now());
 
 watch(
     () => props.activeMatch,
@@ -41,6 +75,15 @@ watch(
     () => props.bluePoints,
     (newVal) => {
         localBluePoints.value = [...(newVal || [])];
+    },
+    { deep: true },
+);
+watch(
+    () => props.timer,
+    (newVal) => {
+        if (newVal) {
+            localTimer.value = { ...localTimer.value, ...newVal };
+        }
     },
     { deep: true },
 );
@@ -349,6 +392,61 @@ const matchStats = computed(() => {
     };
 });
 
+const timerElapsedMilliseconds = computed(() => {
+    let elapsed =
+        localTimer.value.elapsed_milliseconds ??
+        (Number(localTimer.value.elapsed_seconds) || 0) * 1000;
+
+    if (localTimer.value.status === 'running' && localTimer.value.started_at) {
+        elapsed += Math.max(
+            0,
+            timerNowTick.value -
+                (localTimer.value.started_at_milliseconds ??
+                    Date.parse(localTimer.value.started_at)),
+        );
+    }
+
+    return elapsed;
+});
+
+const timerDisplayMilliseconds = computed(() => {
+    if (localTimer.value.is_countdown) {
+        return Math.max(
+            0,
+            localTimer.value.second * 1000 - timerElapsedMilliseconds.value,
+        );
+    }
+
+    if (localTimer.value.is_autostop) {
+        return Math.min(
+            timerElapsedMilliseconds.value,
+            localTimer.value.second * 1000,
+        );
+    }
+
+    return timerElapsedMilliseconds.value;
+});
+
+const formattedTimer = computed(() => {
+    const safeMilliseconds = Math.max(
+        0,
+        Math.floor(timerDisplayMilliseconds.value),
+    );
+    const minutes = Math.floor(safeMilliseconds / 60000);
+    const seconds = Math.floor((safeMilliseconds % 60000) / 1000);
+    const milliseconds = safeMilliseconds % 1000;
+
+    return `${minutes.toString().padStart(2, '0')}:${seconds
+        .toString()
+        .padStart(2, '0')}:${milliseconds.toString().padStart(3, '0')}`;
+});
+
+const isTimerDisplayed = computed(() => Boolean(localTimer.value.is_display));
+
+const timerFallbackLabel = computed(
+    () => props.arena?.arena_name ?? props.arena?.gelanggang_id ?? '-',
+);
+
 const updateScoreDetail = (event: any) => {
     if (event.scoreDetail) {
         const targetPoints =
@@ -379,8 +477,14 @@ const updateScoreDetail = (event: any) => {
 
 let echoStatusChannel: any = null;
 let echoScoreChannel: any = null;
+let echoTimerChannel: any = null;
+let timerTickInterval: ReturnType<typeof setInterval> | null = null;
 
 onMounted(() => {
+    timerTickInterval = setInterval(() => {
+        timerNowTick.value = Date.now();
+    }, 25);
+
     buzzerAudio.value = new Audio('/assets/audio/buzzer.mp3');
     buzzerAudio.value.loop = true;
 
@@ -421,9 +525,21 @@ onMounted(() => {
     echoScoreChannel = echo
         .channel('match.score')
         .listen('.JuryScoreUpdated', updateScoreDetail);
+
+    echoTimerChannel = echo
+        .channel('timer')
+        .listen('.TimerUpdated', (event: any) => {
+            if (event.timer) {
+                localTimer.value = { ...localTimer.value, ...event.timer };
+            }
+        });
 });
 
 onUnmounted(() => {
+    if (timerTickInterval) {
+        clearInterval(timerTickInterval);
+    }
+
     if (buzzerAudio.value) {
         buzzerAudio.value.pause();
         buzzerAudio.value.currentTime = 0;
@@ -443,6 +559,11 @@ onUnmounted(() => {
     if (echoScoreChannel) {
         echoScoreChannel.stopListening('.JuryScoreUpdated');
         echo.leaveChannel('match.score');
+    }
+
+    if (echoTimerChannel) {
+        echoTimerChannel.stopListening('.TimerUpdated');
+        echo.leaveChannel('timer');
     }
 });
 
@@ -762,8 +883,14 @@ const partaiLabel = computed(() => currentMatch.value?.match_code ?? '-');
                                 class="flex items-center justify-center border-r border-stone-800 bg-zinc-900"
                             >
                                 <span
+                                    v-if="isTimerDisplayed"
                                     class="text-7xl font-black tracking-widest"
-                                    >00:00:00</span
+                                    >{{ formattedTimer }}</span
+                                >
+                                <span
+                                    v-else
+                                    class="max-w-full truncate px-6 text-5xl font-black tracking-widest"
+                                    >{{ timerFallbackLabel }}</span
                                 >
                             </div>
                             <div

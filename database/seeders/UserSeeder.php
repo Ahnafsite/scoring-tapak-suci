@@ -18,6 +18,7 @@ class UserSeeder extends Seeder
         $sekretarisRole = Role::where('name', 'Sekretaris')->first();
         $juriRole = Role::where('name', 'Juri')->first();
         $streamerRole = Role::where('name', 'Streamer')->first();
+        $timerRole = Role::where('name', 'Timer')->first();
 
         User::firstOrCreate(
             ['email' => 'operator@ema.id'],
@@ -54,6 +55,15 @@ class UserSeeder extends Seeder
                 'name' => 'Streamer',
                 'password' => Hash::make('ema.id'),
                 'role_id' => $streamerRole->id,
+            ]
+        );
+
+        User::firstOrCreate(
+            ['email' => 'timer@ema.id'],
+            [
+                'name' => 'Timer',
+                'password' => Hash::make('ema.id'),
+                'role_id' => $timerRole->id,
             ]
         );
     }

@@ -6,6 +6,7 @@ use App\Models\Arena;
 use App\Models\FightMatch;
 use App\Models\FightRecapJuryPoint;
 use App\Models\Role;
+use App\Models\Timer;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Inertia\Testing\AssertableInertia as Assert;
@@ -54,6 +55,11 @@ class FightStreamingAccessTest extends TestCase
             'jury_one_winner' => 'yellow',
         ]);
 
+        Timer::create([
+            'is_display' => true,
+            'second' => 90,
+        ]);
+
         $response = $this->actingAs($user)->get(route('fight-streaming'));
 
         $response
@@ -63,6 +69,8 @@ class FightStreamingAccessTest extends TestCase
                 ->where('activeMatch.match_code', '001')
                 ->where('activeMatch.status', 'ongoing')
                 ->where('recapPoints.0.total_poin_yellow', 40)
+                ->where('timer.is_display', true)
+                ->where('timer.second', 90)
                 ->has('yellowPoints')
                 ->has('bluePoints')
             );
