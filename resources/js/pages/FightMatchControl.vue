@@ -323,6 +323,14 @@ const saveMatchWinner = async () => {
     }
 };
 
+const cancelMatchWinner = () => {
+    isMatchWinnerDialogOpen.value = false;
+    if (currentMatchDetail.value) {
+        currentMatchDetail.value.status = 'paused';
+        localStorage.removeItem('pending_keputusan_match_code');
+    }
+};
+
 const triggerReset = () => {
     setStatus('not_started');
 };
@@ -1200,8 +1208,11 @@ onUnmounted(() => {
                     </div>
                 </div>
 
-                <DialogFooter class="pt-4">
-                    <Button @click="saveMatchWinner" class="w-full font-black uppercase tracking-widest bg-green-500 hover:bg-green-600 text-white" :disabled="isSavingMatchWinner">
+                <DialogFooter class="pt-4 flex gap-2 w-full">
+                    <Button variant="ghost" @click="cancelMatchWinner" class="flex-1 font-black uppercase tracking-widest" :disabled="isSavingMatchWinner">
+                        Batal
+                    </Button>
+                    <Button @click="saveMatchWinner" class="flex-1 font-black uppercase tracking-widest bg-green-500 hover:bg-green-600 text-white" :disabled="isSavingMatchWinner">
                         {{ isSavingMatchWinner ? 'Menyimpan & Mensinkronisasi...' : 'Simpan & Akhiri Partai' }}
                     </Button>
                 </DialogFooter>
