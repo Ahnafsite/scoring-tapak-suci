@@ -32,6 +32,7 @@ createInertiaApp({
             case name === 'FightMatchControl':
             case name === 'FightJury':
             case name === 'FightSecretary':
+            case name === 'FightStreaming':
                 return null;
             case name.startsWith('auth/'):
                 return AuthLayout;

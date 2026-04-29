@@ -217,10 +217,19 @@ const setStatus = async (newStatus: string) => {
         const oldVal = currentMatchDetail.value.status;
         currentMatchDetail.value.status = newStatus;
         try {
-            await axios.post('/api/partai/update-status', {
+            const response = await axios.post('/api/partai/update-status', {
                 id: currentMatchDetail.value.id,
                 status: newStatus
             });
+            if (response.data?.data) {
+                currentMatchDetail.value = response.data.data;
+            }
+            if (response.data?.recap && currentRecapDetail.value && Array.isArray(currentRecapDetail.value)) {
+                const idx = currentRecapDetail.value.findIndex((r: any) => r.round_number === response.data.recap.round_number);
+                if (idx !== -1) {
+                    currentRecapDetail.value.splice(idx, 1, response.data.recap);
+                }
+            }
             // Reload schedules to reflect status change in sidebar
             router.reload({ only: ['schedules'] });
         } catch (e) {

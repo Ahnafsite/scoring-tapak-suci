@@ -2,8 +2,10 @@
 
 namespace Database\Seeders;
 
-use Illuminate\Database\Console\Seeds\WithoutModelEvents;
+use App\Models\Role;
+use App\Models\User;
 use Illuminate\Database\Seeder;
+use Illuminate\Support\Facades\Hash;
 
 class UserSeeder extends Seeder
 {
@@ -12,45 +14,45 @@ class UserSeeder extends Seeder
      */
     public function run(): void
     {
-        $operatorRole = \App\Models\Role::where('name', 'Operator')->first();
-        $sekretarisRole = \App\Models\Role::where('name', 'Sekretaris')->first();
-        $juriRole = \App\Models\Role::where('name', 'Juri')->first();
-        $streamerRole = \App\Models\Role::where('name', 'Streamer')->first();
+        $operatorRole = Role::where('name', 'Operator')->first();
+        $sekretarisRole = Role::where('name', 'Sekretaris')->first();
+        $juriRole = Role::where('name', 'Juri')->first();
+        $streamerRole = Role::where('name', 'Streamer')->first();
 
-        \App\Models\User::firstOrCreate(
+        User::firstOrCreate(
             ['email' => 'operator@ema.id'],
             [
                 'name' => 'Operator',
-                'password' => \Illuminate\Support\Facades\Hash::make('password'),
+                'password' => Hash::make('ema.id'),
                 'role_id' => $operatorRole->id,
             ]
         );
 
-        \App\Models\User::firstOrCreate(
+        User::firstOrCreate(
             ['email' => 'sekretaris@ema.id'],
             [
                 'name' => 'Sekretaris',
-                'password' => \Illuminate\Support\Facades\Hash::make('password'),
+                'password' => Hash::make('ema.id'),
                 'role_id' => $sekretarisRole->id,
             ]
         );
 
         for ($i = 1; $i <= 5; $i++) {
-            \App\Models\User::firstOrCreate(
-                ['email' => 'juri' . $i . '@ema.id'],
+            User::firstOrCreate(
+                ['email' => 'juri'.$i.'@ema.id'],
                 [
-                    'name' => 'Juri ' . $i,
-                    'password' => \Illuminate\Support\Facades\Hash::make('password'),
+                    'name' => 'Juri '.$i,
+                    'password' => Hash::make('ema.id'),
                     'role_id' => $juriRole->id,
                 ]
             );
         }
 
-        \App\Models\User::firstOrCreate(
+        User::firstOrCreate(
             ['email' => 'streamer@ema.id'],
             [
                 'name' => 'Streamer',
-                'password' => \Illuminate\Support\Facades\Hash::make('password'),
+                'password' => Hash::make('ema.id'),
                 'role_id' => $streamerRole->id,
             ]
         );
