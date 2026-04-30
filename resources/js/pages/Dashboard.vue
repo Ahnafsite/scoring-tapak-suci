@@ -16,6 +16,7 @@ import {
 import {
     logout,
     fightMatchControl,
+    seniMatchControl,
     fightSecretary,
     fightStreaming,
     fightJury,
@@ -36,19 +37,35 @@ const handleLogout = () => {
         class="relative flex min-h-screen items-center justify-center bg-background text-foreground"
     >
         <div class="flex flex-col items-center justify-center space-y-8">
+            <img
+                src="/assets/images/js_logo.png"
+                alt="Tapak Suci Logo"
+                class="h-28 w-28 object-contain"
+            />
             <h1 class="text-3xl font-bold tracking-tight">
                 Selamat Datang, {{ userName.replace('Juri', 'Pembantu Wasit') }}
             </h1>
 
             <template v-if="page.props.auth?.user?.role?.name === 'Operator'">
-                <Link :href="fightMatchControl().url">
-                    <Button
-                        size="lg"
-                        class="rounded-xl px-8 py-6 text-lg font-semibold"
-                    >
-                        Control Panel Tanding
-                    </Button>
-                </Link>
+                <div class="flex flex-col gap-4">
+                    <Link :href="fightMatchControl().url">
+                        <Button
+                            size="lg"
+                            class="w-full rounded-xl px-8 py-6 text-lg font-semibold"
+                        >
+                            Tanding
+                        </Button>
+                    </Link>
+                    <Link :href="seniMatchControl().url">
+                        <Button
+                            size="lg"
+                            variant="secondary"
+                            class="w-full rounded-xl px-8 py-6 text-lg font-semibold"
+                        >
+                            Seni
+                        </Button>
+                    </Link>
+                </div>
             </template>
             <template
                 v-else-if="page.props.auth?.user?.role?.name === 'Sekretaris'"

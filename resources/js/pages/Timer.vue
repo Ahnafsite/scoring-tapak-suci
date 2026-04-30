@@ -129,6 +129,8 @@ const statusLabel = computed(() => {
     return labels[displayStatus.value];
 });
 
+const isRunning = computed(() => displayStatus.value === 'running');
+
 const formatDuration = (millisecondsValue: number) => {
     const safeMilliseconds = Math.max(0, Math.floor(millisecondsValue));
     const minutes = Math.floor(safeMilliseconds / 60000);
@@ -291,19 +293,20 @@ onUnmounted(() => {
                         </div>
                     </div>
 
-                    <div class="grid grid-cols-2 gap-3 sm:grid-cols-4">
+                    <div class="grid grid-cols-2 gap-3 sm:grid-cols-3">
                         <Button
-                            class="h-14 gap-2"
-                            :disabled="isSaving || displayStatus === 'running'"
+                            v-if="!isRunning"
+                            class="h-14 gap-2 bg-green-500 text-white hover:bg-green-600 focus-visible:ring-green-500/30"
+                            :disabled="isSaving"
                             @click="sendControl('start')"
                         >
                             <Play class="size-5" />
                             Start
                         </Button>
                         <Button
-                            variant="secondary"
-                            class="h-14 gap-2"
-                            :disabled="isSaving || displayStatus !== 'running'"
+                            v-else
+                            class="h-14 gap-2 bg-amber-500 text-black hover:bg-amber-400 focus-visible:ring-amber-500/30"
+                            :disabled="isSaving"
                             @click="sendControl('pause')"
                         >
                             <Pause class="size-5" />
@@ -319,6 +322,7 @@ onUnmounted(() => {
                             Stop
                         </Button>
                         <Button
+                            v-if="!isRunning"
                             variant="outline"
                             class="h-14 gap-2 border-stone-700 bg-transparent"
                             :disabled="isSaving"

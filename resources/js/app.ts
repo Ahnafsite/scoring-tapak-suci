@@ -29,6 +29,7 @@ createInertiaApp({
             case name === 'Welcome':
             case name === 'Dashboard':
             case name === 'FightMatchControl':
+            case name === 'SeniMatchControl':
             case name === 'FightJury':
             case name === 'FightSecretary':
             case name === 'FightStreaming':

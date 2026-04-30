@@ -1,7 +1,5 @@
 <script setup lang="ts">
-import { Link } from '@inertiajs/vue3';
-import AppLogoIcon from '@/components/AppLogoIcon.vue';
-import { home } from '@/routes';
+import { Card, CardContent } from '@/components/ui/card';
 
 defineProps<{
     title?: string;
@@ -11,33 +9,25 @@ defineProps<{
 
 <template>
     <div
-        class="flex min-h-svh flex-col items-center justify-center gap-6 bg-background p-6 md:p-10"
+        class="relative flex min-h-svh items-center justify-center overflow-hidden bg-[#0b0b0b] px-5 py-8 md:px-8"
     >
-        <div class="w-full max-w-sm">
-            <div class="flex flex-col gap-8">
-                <div class="flex flex-col items-center gap-4">
-                    <Link
-                        :href="home()"
-                        class="flex flex-col items-center gap-2 font-medium"
-                    >
-                        <div
-                            class="mb-1 flex h-9 w-9 items-center justify-center rounded-md"
-                        >
-                            <AppLogoIcon
-                                class="size-9 fill-current text-[var(--foreground)] dark:text-white"
-                            />
-                        </div>
-                        <span class="sr-only">{{ title }}</span>
-                    </Link>
-                    <div class="space-y-2 text-center">
-                        <h1 class="text-xl font-medium">{{ title }}</h1>
-                        <p class="text-center text-sm text-muted-foreground">
-                            {{ description }}
-                        </p>
-                    </div>
-                </div>
+        <div
+            class="absolute inset-0 bg-[radial-gradient(circle_at_top,rgba(234,179,8,0.12),transparent_38%),radial-gradient(circle_at_bottom,rgba(234,179,8,0.08),transparent_28%)]"
+        ></div>
+        <div
+            class="absolute inset-0 bg-[linear-gradient(180deg,rgba(255,255,255,0.03),transparent_22%,transparent_78%,rgba(255,255,255,0.02))]"
+        ></div>
+
+        <Card
+            class="relative w-full max-w-[29rem] overflow-hidden rounded-[1.6rem] border-yellow-500/10 bg-[#161616]/96 py-0 shadow-[0_24px_64px_rgba(0,0,0,0.5)]"
+        >
+            <div
+                class="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-yellow-400/50 to-transparent"
+            ></div>
+
+            <CardContent class="w-full px-5 py-5 sm:px-7 sm:py-6">
                 <slot />
-            </div>
-        </div>
+            </CardContent>
+        </Card>
     </div>
 </template>
