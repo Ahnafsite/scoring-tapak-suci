@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { Head, router } from '@inertiajs/vue3';
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
+import FightWaitingState from '@/components/fight/FightWaitingState.vue';
+import { useFullscreenLock } from '@/composables/useFullscreenLock';
 
 const props = defineProps<{
     arena: any;
@@ -28,6 +30,14 @@ type TimerState = {
 };
 
 const currentMatch = ref<any>(props.activeMatch ?? null);
+const {
+    buttonTitle,
+    exitClickCount,
+    isFullscreen,
+    remainingExitClicks,
+    requiredExitClicks,
+    triggerFullscreen,
+} = useFullscreenLock();
 const localRecapPoints = ref<any[]>([...(props.recapPoints || [])]);
 const localYellowPoints = ref<any[]>([...(props.yellowPoints || [])]);
 const localBluePoints = ref<any[]>([...(props.bluePoints || [])]);
@@ -594,58 +604,15 @@ const partaiLabel = computed(() => currentMatch.value?.match_code ?? '-');
         class="flex h-dvh w-screen overflow-hidden bg-zinc-950 text-foreground"
     >
         <template v-if="matchStatus === 'not_started'">
-            <div
-                class="relative z-10 flex flex-1 animate-pulse flex-col items-center justify-center"
-            >
-                <img
-                    src="/assets/images/ts_logo.png"
-                    alt="Tapak Suci Logo"
-                    class="z-10 h-64 w-64 object-contain drop-shadow-2xl"
-                />
-                <p
-                    class="z-10 mt-8 text-sm font-bold tracking-widest text-muted-foreground/50 uppercase"
-                >
-                    Menunggu Pertandingan...
-                </p>
-                <div
-                    class="pointer-events-none absolute inset-0 flex items-center justify-center opacity-[0.03]"
-                >
-                    <svg
-                        viewBox="0 0 100 100"
-                        class="h-[800px] w-[800px]"
-                        fill="currentColor"
-                        xmlns="http://www.w3.org/2000/svg"
-                    >
-                        <circle
-                            cx="50"
-                            cy="50"
-                            r="40"
-                            stroke="currentColor"
-                            stroke-width="2"
-                            fill="none"
-                        />
-                        <path
-                            d="M50 10 L50 90 M10 50 L90 50"
-                            stroke="currentColor"
-                            stroke-width="2"
-                        />
-                        <circle
-                            cx="50"
-                            cy="50"
-                            r="20"
-                            stroke="currentColor"
-                            stroke-width="2"
-                            fill="none"
-                        />
-                    </svg>
-                </div>
-            </div>
+            <FightWaitingState clickable :on-logo-click="triggerFullscreen" />
         </template>
 
         <template v-else-if="matchStatus === 'done_paused'">
             <div class="relative z-10 flex h-full w-full flex-col bg-zinc-950">
                 <div
-                    class="flex h-32 w-full shrink-0 border-b border-stone-800 shadow-xl"
+                    class="flex h-32 w-full shrink-0 cursor-pointer border-b border-stone-800 shadow-xl"
+                    :title="buttonTitle"
+                    @click="triggerFullscreen"
                 >
                     <div
                         class="relative flex flex-1 items-center justify-between overflow-hidden bg-gradient-to-r from-blue-700 to-blue-600 px-10 shadow-[inset_0_0_50px_rgba(0,0,0,0.2)]"
@@ -865,7 +832,9 @@ const partaiLabel = computed(() => currentMatch.value?.match_code ?? '-');
                         class="flex h-full w-full flex-col overflow-hidden rounded-2xl border border-stone-800 bg-zinc-900 shadow-2xl"
                     >
                         <div
-                            class="flex h-14 shrink-0 items-center justify-center border-b border-stone-800 bg-black/40 px-8 text-3xl font-black text-white uppercase"
+                            class="flex h-14 shrink-0 cursor-pointer items-center justify-center border-b border-stone-800 bg-black/40 px-8 text-3xl font-black text-white uppercase"
+                            :title="buttonTitle"
+                            @click="triggerFullscreen"
                         >
                             {{ matchTitle || '-' }}
                         </div>
