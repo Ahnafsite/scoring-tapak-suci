@@ -3,9 +3,9 @@
     "private": true,
     "type": "module",
     "scripts": {
-        "build": "vite build",
-        "build:ssr": "vite build && vite build --ssr",
-        "dev": "vite",
+        "build": "fnm exec --using 20 ./node_modules/.bin/vite build",
+        "build:ssr": "fnm exec --using 20 ./node_modules/.bin/vite build && fnm exec --using 20 ./node_modules/.bin/vite build --ssr",
+        "dev": "fnm exec --using 20 ./node_modules/.bin/vite",
         "format": "prettier --write resources/",
         "format:check": "prettier --check resources/",
         "lint": "eslint . --fix",

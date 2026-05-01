@@ -14,8 +14,7 @@ withDefaults(
 
 <template>
     <Head title="Welcome">
-        <link rel="preconnect" href="https://rsms.me/" />
-        <link rel="stylesheet" href="https://rsms.me/inter/inter.css" />
+        <link rel="stylesheet" href="/assets/fonts/inter/inter.css" />
     </Head>
     <div
         class="flex min-h-screen flex-col items-center bg-[#FDFDFC] p-6 text-[#1b1b18] lg:justify-center lg:p-8 dark:bg-[#0a0a0a]"
@@ -78,13 +77,12 @@ withDefaults(
                                 </span>
                             </span>
                             <span>
-                                Read the
-                                <a
-                                    href="https://laravel.com/docs"
-                                    target="_blank"
+                                Open the
+                                <Link
+                                    :href="dashboard()"
                                     class="ml-1 inline-flex items-center space-x-1 font-medium text-[#f53003] underline underline-offset-4 dark:text-[#FF4433]"
                                 >
-                                    <span>Documentation</span>
+                                    <span>Dashboard</span>
                                     <svg
                                         width="10"
                                         height="11"
@@ -99,7 +97,7 @@ withDefaults(
                                             stroke-linecap="square"
                                         />
                                     </svg>
-                                </a>
+                                </Link>
                             </span>
                         </li>
                         <li
@@ -117,40 +115,19 @@ withDefaults(
                                 </span>
                             </span>
                             <span>
-                                Watch video tutorials at
-                                <a
-                                    href="https://laracasts.com"
-                                    target="_blank"
-                                    class="ml-1 inline-flex items-center space-x-1 font-medium text-[#f53003] underline underline-offset-4 dark:text-[#FF4433]"
-                                >
-                                    <span>Laracasts</span>
-                                    <svg
-                                        width="10"
-                                        height="11"
-                                        viewBox="0 0 10 11"
-                                        fill="none"
-                                        xmlns="http://www.w3.org/2000/svg"
-                                        class="h-2.5 w-2.5"
-                                    >
-                                        <path
-                                            d="M7.70833 6.95834V2.79167H3.54167M2.5 8L7.5 3.00001"
-                                            stroke="currentColor"
-                                            stroke-linecap="square"
-                                        />
-                                    </svg>
-                                </a>
+                                All visible fonts, logos, icons, and audio are
+                                served from local files.
                             </span>
                         </li>
                     </ul>
                     <ul class="flex gap-3 text-sm leading-normal">
                         <li>
-                            <a
-                                href="https://cloud.laravel.com"
-                                target="_blank"
+                            <Link
+                                :href="dashboard()"
                                 class="inline-block rounded-sm border border-black bg-[#1b1b18] px-5 py-1.5 text-sm leading-normal text-white hover:border-black hover:bg-black dark:border-[#eeeeec] dark:bg-[#eeeeec] dark:text-[#1C1C1A] dark:hover:border-white dark:hover:bg-white"
                             >
-                                Deploy now
-                            </a>
+                                Open dashboard
+                            </Link>
                         </li>
                     </ul>
                 </div>
