@@ -30,14 +30,7 @@ type TimerState = {
 };
 
 const currentMatch = ref<any>(props.activeMatch ?? null);
-const {
-    buttonTitle,
-    exitClickCount,
-    isFullscreen,
-    remainingExitClicks,
-    requiredExitClicks,
-    triggerFullscreen,
-} = useFullscreenLock();
+const { buttonTitle, triggerFullscreen } = useFullscreenLock();
 const localRecapPoints = ref<any[]>([...(props.recapPoints || [])]);
 const localYellowPoints = ref<any[]>([...(props.yellowPoints || [])]);
 const localBluePoints = ref<any[]>([...(props.bluePoints || [])]);
@@ -114,22 +107,37 @@ const matchStatus = computed(() => {
     return 'not_started';
 });
 
+const isSameRound = (left: any, right: any) => Number(left) === Number(right);
+
 const activeRoundRecap = computed(() => {
     if (!currentMatch.value) {
         return null;
     }
 
     return (
-        localRecapPoints.value.find(
-            (recap: any) =>
-                recap.round_number == currentMatch.value.round_number,
+        localRecapPoints.value.find((recap: any) =>
+            isSameRound(recap.round_number, currentMatch.value.round_number),
         ) ?? null
     );
 });
 
+const upsertRecapPoint = (recap: any) => {
+    const index = localRecapPoints.value.findIndex((item: any) =>
+        isSameRound(item.round_number, recap.round_number),
+    );
+
+    if (index !== -1) {
+        localRecapPoints.value.splice(index, 1, recap);
+
+        return;
+    }
+
+    localRecapPoints.value.push(recap);
+};
+
 const getRoundWinner = (roundNumber: number) => {
-    const recap = localRecapPoints.value.find(
-        (item: any) => item.round_number == roundNumber,
+    const recap = localRecapPoints.value.find((item: any) =>
+        isSameRound(item.round_number, roundNumber),
     );
 
     return recap ? recap.winner : null;
@@ -473,15 +481,7 @@ const updateScoreDetail = (event: any) => {
     }
 
     if (event.recap) {
-        const index = localRecapPoints.value.findIndex(
-            (recap: any) => recap.round_number === event.recap.round_number,
-        );
-
-        if (index !== -1) {
-            localRecapPoints.value.splice(index, 1, event.recap);
-        } else {
-            localRecapPoints.value.push(event.recap);
-        }
+        upsertRecapPoint(event.recap);
     }
 };
 

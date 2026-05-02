@@ -880,7 +880,7 @@ onUnmounted(() => {
 
 <template>
     <Head title="Control Panel - Tapak Suci" />
-    <Toaster rich-colors />
+    <Toaster rich-colors position="top-right" />
     <div class="flex h-screen overflow-hidden bg-background text-foreground">
         <!-- Sidebar -->
         <div

@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Events\JuryScoreUpdated;
 use App\Models\FightDetailJuryPointBlue;
 use App\Models\FightDetailJuryPointYellow;
 use App\Models\FightMatch;
@@ -10,6 +11,7 @@ use App\Models\FightSchedule;
 use App\Models\Role;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Http;
 use Tests\TestCase;
 
@@ -95,6 +97,45 @@ class MatchStatusUpdateTest extends TestCase
             'round_number' => 1,
             'winner' => 'yellow',
         ]);
+    }
+
+    public function test_update_round_winner_updates_recap_and_broadcasts_it(): void
+    {
+        Event::fake([JuryScoreUpdated::class]);
+
+        $operator = Role::create(['name' => 'Operator']);
+        $user = User::factory()->create(['role_id' => $operator->id]);
+        $recap = FightRecapJuryPoint::create([
+            'round_number' => 2,
+            'winner' => null,
+        ]);
+
+        $response = $this
+            ->actingAs($user)
+            ->postJson('/api/partai/update-round-winner', [
+                'round_number' => 2,
+                'winner' => 'blue',
+            ]);
+
+        $response
+            ->assertOk()
+            ->assertJsonPath('data.id', $recap->id)
+            ->assertJsonPath('data.round_number', 2)
+            ->assertJsonPath('data.winner', 'blue');
+
+        $this->assertDatabaseHas('fight_recap_jury_points', [
+            'id' => $recap->id,
+            'round_number' => 2,
+            'winner' => 'blue',
+        ]);
+
+        Event::assertDispatched(
+            JuryScoreUpdated::class,
+            fn (JuryScoreUpdated $event): bool => $event->roundNumber === 2
+                && $event->scoreDetail === null
+                && $event->recap->is($recap->fresh())
+                && $event->recap->winner === 'blue',
+        );
     }
 
     public function test_save_partai_data_ts_can_reset_match_scores(): void
