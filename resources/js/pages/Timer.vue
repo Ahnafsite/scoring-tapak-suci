@@ -42,8 +42,16 @@ const props = defineProps<{
     timer: TimerState;
 }>();
 
+const performanceNow = () =>
+    typeof performance === 'undefined' ? Date.now() : performance.now();
+
 const timer = ref<TimerState>({ ...props.timer });
-const nowTick = ref(Date.now());
+const initialServerNow = Date.parse(props.timer.server_now ?? '');
+const syncedServerNow = ref(
+    Number.isFinite(initialServerNow) ? initialServerNow : Date.now(),
+);
+const syncedClientNow = ref(performanceNow());
+const nowTick = ref(syncedServerNow.value);
 const isSaving = ref(false);
 const customMinutes = ref(Math.floor((props.timer.second ?? 120) / 60));
 const customSeconds = ref((props.timer.second ?? 120) % 60);
@@ -66,13 +74,19 @@ const elapsedMilliseconds = computed(() => {
         timer.value.elapsed_milliseconds ??
         (Number(timer.value.elapsed_seconds) || 0) * 1000;
 
-    if (timer.value.status === 'running' && timer.value.started_at) {
-        elapsed += Math.max(
-            0,
-            nowTick.value -
-                (timer.value.started_at_milliseconds ??
-                    Date.parse(timer.value.started_at)),
-        );
+    if (timer.value.status === 'running') {
+        const serverNow = Date.parse(timer.value.server_now ?? '');
+
+        if (Number.isFinite(serverNow)) {
+            elapsed += Math.max(0, nowTick.value - serverNow);
+        } else if (timer.value.started_at) {
+            elapsed += Math.max(
+                0,
+                nowTick.value -
+                    (timer.value.started_at_milliseconds ??
+                        Date.parse(timer.value.started_at)),
+            );
+        }
     }
 
     return elapsed;
@@ -142,7 +156,20 @@ const formatDuration = (millisecondsValue: number) => {
         .padStart(2, '0')}:${milliseconds.toString().padStart(3, '0')}`;
 };
 
+const updateServerClock = (nextTimer: TimerState) => {
+    const serverNow = Date.parse(nextTimer.server_now ?? '');
+
+    if (!Number.isFinite(serverNow)) {
+        return;
+    }
+
+    syncedServerNow.value = serverNow;
+    syncedClientNow.value = performanceNow();
+    nowTick.value = serverNow;
+};
+
 const syncTimer = (nextTimer: TimerState) => {
+    updateServerClock(nextTimer);
     timer.value = { ...timer.value, ...nextTimer };
 };
 
@@ -198,7 +225,8 @@ watch(
 
 onMounted(() => {
     tickInterval = setInterval(() => {
-        nowTick.value = Date.now();
+        nowTick.value =
+            syncedServerNow.value + (performanceNow() - syncedClientNow.value);
     }, 25);
 
     const echo = (window as any).Echo;

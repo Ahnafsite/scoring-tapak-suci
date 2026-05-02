@@ -53,6 +53,37 @@ const localTimer = ref<TimerState>(
 );
 const timerNowTick = ref(Date.now());
 
+const resetLocalScoreState = () => {
+    localYellowPoints.value = [];
+    localBluePoints.value = [];
+    localRecapPoints.value = [];
+};
+
+const shouldReloadScoresForMatchUpdate = (updatedMatch: any) => {
+    if (!updatedMatch) {
+        return false;
+    }
+
+    if (!currentMatch.value) {
+        return true;
+    }
+
+    return (
+        currentMatch.value.id !== updatedMatch.id ||
+        currentMatch.value.round_number !== updatedMatch.round_number ||
+        (updatedMatch.status === 'ongoing' &&
+            currentMatch.value.status !== 'ongoing')
+    );
+};
+
+const isScoreEventForCurrentMatch = (event: any) => {
+    if (!event.partaiId || !currentMatch.value?.id) {
+        return true;
+    }
+
+    return Number(event.partaiId) === Number(currentMatch.value.id);
+};
+
 watch(
     () => props.activeMatch,
     (newVal) => {
@@ -466,6 +497,10 @@ const timerFallbackLabel = computed(
 );
 
 const updateScoreDetail = (event: any) => {
+    if (!isScoreEventForCurrentMatch(event)) {
+        return;
+    }
+
     if (event.scoreDetail) {
         const targetPoints =
             event.corner === 'yellow' ? localYellowPoints : localBluePoints;
@@ -514,12 +549,14 @@ onMounted(() => {
         .channel('match.status')
         .listen('.ActiveMatchUpdated', (event: any) => {
             if (event.match) {
-                const shouldReload =
-                    !currentMatch.value ||
-                    currentMatch.value.id !== event.match.id;
+                const shouldReloadScores = shouldReloadScoresForMatchUpdate(
+                    event.match,
+                );
+
                 currentMatch.value = event.match;
 
-                if (shouldReload) {
+                if (shouldReloadScores) {
+                    resetLocalScoreState();
                     router.reload({
                         only: [
                             'activeMatch',

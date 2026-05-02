@@ -64,6 +64,27 @@ class TimerFeatureTest extends TestCase
             );
     }
 
+    public function test_timer_page_payload_includes_server_time_for_clock_sync(): void
+    {
+        $timerRole = Role::create(['name' => 'Timer']);
+        $user = User::factory()->create(['role_id' => $timerRole->id]);
+        $now = Carbon::parse('2026-04-26T10:00:00.111000Z');
+
+        Carbon::setTestNow($now);
+
+        try {
+            $this->actingAs($user)
+                ->get(route('timer'))
+                ->assertOk()
+                ->assertInertia(fn (Assert $page) => $page
+                    ->component('Timer')
+                    ->where('timer.server_now', $now->toISOString())
+                );
+        } finally {
+            Carbon::setTestNow();
+        }
+    }
+
     public function test_non_timer_users_cannot_view_timer_page(): void
     {
         $operatorRole = Role::create(['name' => 'Operator']);

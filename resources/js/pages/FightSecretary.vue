@@ -32,6 +32,57 @@ const localYellowPoints = ref<any[]>([...(props.yellowPoints || [])]);
 const localBluePoints = ref<any[]>([...(props.bluePoints || [])]);
 const localRecapPoints = ref<any[]>([...(props.recapPoints || [])]);
 
+const resetLocalScoreState = () => {
+    localYellowPoints.value = [];
+    localBluePoints.value = [];
+    localRecapPoints.value = [];
+};
+
+const getMatchId = (match: any) => Number(match?.id ?? 0);
+
+const isDifferentMatch = (updatedMatch: any) => {
+    if (!updatedMatch) {
+        return false;
+    }
+
+    if (!currentMatch.value) {
+        return true;
+    }
+
+    return getMatchId(currentMatch.value) !== getMatchId(updatedMatch);
+};
+
+const isStartingFromNotStarted = (updatedMatch: any) => {
+    return (
+        currentMatch.value?.status === 'not_started' &&
+        updatedMatch?.status === 'ongoing'
+    );
+};
+
+const shouldResetScoresForMatchUpdate = (updatedMatch: any) => {
+    if (!updatedMatch) {
+        return false;
+    }
+
+    return (
+        isDifferentMatch(updatedMatch) || isStartingFromNotStarted(updatedMatch)
+    );
+};
+
+const reloadScoreStateFromDatabase = () => {
+    router.reload({
+        only: ['activeMatch', 'recapPoints', 'yellowPoints', 'bluePoints'],
+    });
+};
+
+const isScoreEventForCurrentMatch = (event: any) => {
+    if (!event.partaiId || !currentMatch.value?.id) {
+        return true;
+    }
+
+    return Number(event.partaiId) === Number(currentMatch.value.id);
+};
+
 // Sync with Inertia props changes
 watch(
     () => props.activeMatch,
@@ -82,21 +133,15 @@ onMounted(() => {
             .channel('match.status')
             .listen('.ActiveMatchUpdated', (e: any) => {
                 if (e.match) {
-                    if (
-                        !currentMatch.value ||
-                        currentMatch.value.id !== e.match.id
-                    ) {
-                        currentMatch.value = e.match;
-                        router.reload({
-                            only: [
-                                'activeMatch',
-                                'recapPoints',
-                                'yellowPoints',
-                                'bluePoints',
-                            ],
-                        });
-                    } else {
-                        currentMatch.value = e.match;
+                    const shouldResetScores = shouldResetScoresForMatchUpdate(
+                        e.match,
+                    );
+
+                    currentMatch.value = e.match;
+
+                    if (shouldResetScores) {
+                        resetLocalScoreState();
+                        reloadScoreStateFromDatabase();
                     }
                 }
             });
@@ -104,6 +149,10 @@ onMounted(() => {
         echoScoreChannel = echo
             .channel('match.score')
             .listen('.JuryScoreUpdated', (e: any) => {
+                if (!isScoreEventForCurrentMatch(e)) {
+                    return;
+                }
+
                 if (e.scoreDetail) {
                     if (e.scoreDetail.deleted) {
                         const targetId = Number(e.scoreDetail.id);
