@@ -17,6 +17,7 @@ import {
     DialogHeader,
     DialogTitle,
 } from '@/components/ui/dialog';
+import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import {
     Select,
@@ -86,14 +87,20 @@ const isLoading = ref(false);
 const isRefreshing = ref(false);
 const isConfirmDialogOpen = ref(false);
 const isMatchConfirmDialogOpen = ref(false);
+const isTimeDialogOpen = ref(false);
 const isSyncing = ref(false);
 const isActivatingMatch = ref(false);
 const isUpdatingStatus = ref(false);
+const isSavingTime = ref(false);
+const isSavingDetail = ref(false);
+const isResetting = ref(false);
 
 const gelanggangList = ref<any[]>([]);
 const sesiList = ref<any[]>([]);
 const selectedGelanggang = ref('');
 const selectedSesi = ref('');
+const performanceMinute = ref(0);
+const performanceSecond = ref(0);
 
 const {
     buttonTitle,
@@ -157,6 +164,31 @@ const pendingMatchTitle = computed(() => {
         .filter(Boolean)
         .join(' - ');
 });
+
+const statusMeta = (status: string | null | undefined) => {
+    switch (status) {
+        case 'ongoing':
+            return {
+                label: 'Sedang Berlangsung',
+                class: 'border-blue-500/25 bg-blue-500/15 text-blue-400',
+            };
+        case 'paused':
+            return {
+                label: 'Dijeda',
+                class: 'border-yellow-500/25 bg-yellow-500/15 text-yellow-400',
+            };
+        case 'done':
+            return {
+                label: 'Selesai',
+                class: 'border-green-500/25 bg-green-500/15 text-green-400',
+            };
+        default:
+            return {
+                label: 'Belum Mulai',
+                class: 'border-gray-400/25 bg-gray-400/15 text-gray-400',
+            };
+    }
+};
 
 const isTechniqueMatch = (match: SeniMatch | null | undefined) => {
     const matchText = [
@@ -429,9 +461,12 @@ const activatePendingMatch = async () => {
     }
 };
 
-const updateActiveMatchStatus = async (status: string) => {
+const updateActiveMatchStatus = async (
+    status: string,
+    options: { syncSource?: boolean; time?: number | null } = {},
+) => {
     if (!activeMatch.value) {
-        return;
+        return null;
     }
 
     isUpdatingStatus.value = true;
@@ -439,17 +474,123 @@ const updateActiveMatchStatus = async (status: string) => {
     try {
         const response = await axios.post(
             `/api/seni/matches/${activeMatch.value.id}/status`,
-            { status },
+            {
+                status,
+                sync_source: options.syncSource ?? true,
+                ...(options.time !== undefined ? { time: options.time } : {}),
+            },
         );
 
         selectedPool.value = response.data?.pool ?? selectedPool.value;
         currentMatches.value = response.data?.matches ?? currentMatches.value;
         toast.success('Status partai seni berhasil diperbarui.');
+
+        return response.data;
     } catch (e) {
         console.error('Failed to update seni match status', e);
         toast.error('Gagal memperbarui status partai seni.');
+
+        return null;
     } finally {
         isUpdatingStatus.value = false;
+    }
+};
+
+const triggerStart = async () => {
+    await updateActiveMatchStatus('ongoing');
+};
+
+const triggerPause = async () => {
+    const response = await updateActiveMatchStatus('paused', {
+        syncSource: false,
+    });
+
+    if (!response || !activeMatch.value) {
+        return;
+    }
+
+    const currentTime = Number(activeMatch.value.time ?? 0);
+    performanceMinute.value = Math.floor(currentTime / 60);
+    performanceSecond.value = Math.floor(currentTime % 60);
+    isTimeDialogOpen.value = true;
+};
+
+const savePerformanceTime = async () => {
+    const minute = Math.max(0, Number(performanceMinute.value) || 0);
+    const second = Math.min(
+        59,
+        Math.max(0, Number(performanceSecond.value) || 0),
+    );
+
+    isSavingTime.value = true;
+
+    try {
+        const response = await updateActiveMatchStatus('paused', {
+            syncSource: true,
+            time: minute * 60 + second,
+        });
+
+        if (response) {
+            isTimeDialogOpen.value = false;
+            toast.success('Waktu penampilan berhasil disimpan.');
+        }
+    } finally {
+        isSavingTime.value = false;
+    }
+};
+
+const cancelPerformanceTime = async () => {
+    isTimeDialogOpen.value = false;
+    await updateActiveMatchStatus('ongoing');
+};
+
+const triggerResume = async () => {
+    await updateActiveMatchStatus('ongoing');
+};
+
+const triggerSave = async () => {
+    if (!activeMatch.value) {
+        return;
+    }
+
+    isSavingDetail.value = true;
+
+    try {
+        const response = await axios.post(
+            `/api/seni/matches/${activeMatch.value.id}/save-detail`,
+        );
+
+        selectedPool.value = response.data?.pool ?? selectedPool.value;
+        currentMatches.value = response.data?.matches ?? currentMatches.value;
+        toast.success('Detail partai seni berhasil disimpan.');
+    } catch (e) {
+        console.error('Failed to save seni match detail', e);
+        toast.error('Gagal menyimpan detail partai seni.');
+    } finally {
+        isSavingDetail.value = false;
+    }
+};
+
+const triggerReset = async () => {
+    if (!activeMatch.value) {
+        return;
+    }
+
+    isResetting.value = true;
+
+    try {
+        const response = await axios.post(
+            `/api/seni/matches/${activeMatch.value.id}/reset`,
+        );
+
+        selectedPool.value = response.data?.pool ?? selectedPool.value;
+        currentMatches.value = response.data?.matches ?? currentMatches.value;
+        toast.success('Partai seni berhasil direset.');
+    } catch (e) {
+        console.error('Failed to reset seni match', e);
+        toast.error('Gagal reset partai seni.');
+    } finally {
+        isResetting.value = false;
     }
 };
 
@@ -643,13 +784,15 @@ const formatTime = (value: string | number | null | undefined) => {
                                         </div>
                                         <Badge
                                             v-if="activeMatch"
-                                            class="shrink-0 border-green-500/25 bg-green-500/15 text-green-400 uppercase"
+                                            :class="[
+                                                'shrink-0 uppercase',
+                                                statusMeta(activeMatch.status)
+                                                    .class,
+                                            ]"
                                         >
                                             {{
-                                                activeMatch.status.replace(
-                                                    '_',
-                                                    ' ',
-                                                )
+                                                statusMeta(activeMatch.status)
+                                                    .label
                                             }}
                                         </Badge>
                                     </div>
@@ -1035,7 +1178,7 @@ const formatTime = (value: string | number | null | undefined) => {
                                     )
                                 "
                                 class="bg-blue-600 px-8 font-bold tracking-widest text-white hover:bg-blue-700"
-                                @click="updateActiveMatchStatus('ongoing')"
+                                @click="triggerStart"
                                 :disabled="isUpdatingStatus"
                             >
                                 START
@@ -1043,7 +1186,7 @@ const formatTime = (value: string | number | null | undefined) => {
                             <Button
                                 v-if="activeMatch?.status === 'ongoing'"
                                 class="bg-yellow-500 px-8 font-bold tracking-widest text-black hover:bg-yellow-600"
-                                @click="updateActiveMatchStatus('paused')"
+                                @click="triggerPause"
                                 :disabled="isUpdatingStatus"
                             >
                                 PAUSE
@@ -1051,7 +1194,7 @@ const formatTime = (value: string | number | null | undefined) => {
                             <Button
                                 v-if="activeMatch?.status === 'paused'"
                                 class="bg-blue-600 px-8 font-bold tracking-widest text-white hover:bg-blue-700"
-                                @click="updateActiveMatchStatus('ongoing')"
+                                @click="triggerResume"
                                 :disabled="isUpdatingStatus"
                             >
                                 RESUME
@@ -1059,8 +1202,8 @@ const formatTime = (value: string | number | null | undefined) => {
                             <Button
                                 v-if="activeMatch?.status === 'paused'"
                                 class="bg-green-500 font-bold tracking-wider text-white hover:bg-green-600"
-                                @click="updateActiveMatchStatus('done')"
-                                :disabled="isUpdatingStatus"
+                                @click="triggerSave"
+                                :disabled="isSavingDetail"
                             >
                                 SAVE
                             </Button>
@@ -1073,9 +1216,10 @@ const formatTime = (value: string | number | null | undefined) => {
                                 "
                                 variant="destructive"
                                 class="font-bold tracking-wider"
-                                disabled
+                                @click="triggerReset"
+                                :disabled="isResetting"
                             >
-                                RESET
+                                {{ isResetting ? 'RESETTING...' : 'RESET' }}
                             </Button>
                         </div>
                     </div>
@@ -1240,6 +1384,68 @@ const formatTime = (value: string | number | null | undefined) => {
                         :disabled="isActivatingMatch"
                     >
                         {{ isActivatingMatch ? 'Memuat...' : 'Ya, Muat Data' }}
+                    </Button>
+                </DialogFooter>
+            </DialogContent>
+        </Dialog>
+
+        <Dialog :open="isTimeDialogOpen">
+            <DialogContent class="sm:max-w-[420px]">
+                <DialogHeader>
+                    <DialogTitle>Waktu penampilan</DialogTitle>
+                    <DialogDescription>
+                        Masukkan waktu tampil dengan format menit:detik.
+                    </DialogDescription>
+                </DialogHeader>
+
+                <div class="grid gap-4 py-2">
+                    <div class="grid grid-cols-[1fr_auto_1fr] items-end gap-3">
+                        <div class="grid gap-2">
+                            <Label
+                                class="text-xs font-bold tracking-wider text-muted-foreground uppercase"
+                            >
+                                Menit
+                            </Label>
+                            <Input
+                                v-model.number="performanceMinute"
+                                type="number"
+                                min="0"
+                                class="h-11 text-center text-lg font-black tabular-nums"
+                            />
+                        </div>
+
+                        <div class="pb-2 text-2xl font-black text-white">:</div>
+
+                        <div class="grid gap-2">
+                            <Label
+                                class="text-xs font-bold tracking-wider text-muted-foreground uppercase"
+                            >
+                                Detik
+                            </Label>
+                            <Input
+                                v-model.number="performanceSecond"
+                                type="number"
+                                min="0"
+                                max="59"
+                                class="h-11 text-center text-lg font-black tabular-nums"
+                            />
+                        </div>
+                    </div>
+                </div>
+
+                <DialogFooter>
+                    <Button
+                        variant="ghost"
+                        @click="cancelPerformanceTime"
+                        :disabled="isSavingTime || isUpdatingStatus"
+                    >
+                        Batal
+                    </Button>
+                    <Button
+                        @click="savePerformanceTime"
+                        :disabled="isSavingTime || isUpdatingStatus"
+                    >
+                        {{ isSavingTime ? 'Menyimpan...' : 'Simpan' }}
                     </Button>
                 </DialogFooter>
             </DialogContent>

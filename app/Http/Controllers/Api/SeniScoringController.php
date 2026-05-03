@@ -187,6 +187,8 @@ class SeniScoringController extends Controller
     {
         $validated = $request->validate([
             'status' => ['required', Rule::in(['not_started', 'ongoing', 'paused', 'done'])],
+            'sync_source' => ['sometimes', 'boolean'],
+            'time' => ['sometimes', 'nullable', 'integer', 'min:0'],
         ]);
 
         if (! $match->is_active) {
@@ -196,15 +198,119 @@ class SeniScoringController extends Controller
             ], 422);
         }
 
-        $match->update(['status' => $validated['status']]);
+        $updates = ['status' => $validated['status']];
+
+        if (array_key_exists('time', $validated)) {
+            $updates['time'] = $validated['time'];
+        }
+
+        $match->update($updates);
 
         $freshMatch = $match->fresh('juryScores');
         $pool = $this->poolForMatch($freshMatch);
         $this->broadcastSeniUpdate($freshMatch, $pool, 'status_updated');
 
+        if ($validated['sync_source'] ?? true) {
+            $statusResponse = $this->updatePartaiStatusOnSource($freshMatch, $validated['status']);
+
+            if (! $statusResponse->successful()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Status lokal diperbarui, tetapi gagal mengirim status ke server scoring.',
+                    'error' => $statusResponse->json() ?? $statusResponse->body(),
+                    'data' => $freshMatch,
+                    'matches' => SeniSingleMatch::orderBy('no_order')->get(),
+                    'pool' => $pool,
+                ], $statusResponse->status());
+            }
+        }
+
         return response()->json([
             'success' => true,
             'message' => 'Status partai seni berhasil diperbarui.',
+            'data' => $freshMatch,
+            'matches' => SeniSingleMatch::orderBy('no_order')->get(),
+            'pool' => $pool,
+        ]);
+    }
+
+    public function saveMatchDetail(SeniSingleMatch $match)
+    {
+        if (! $match->is_active) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Pilih partai aktif terlebih dahulu.',
+            ], 422);
+        }
+
+        $detailResponse = $this->saveSeniMatchDetailToSource($match->fresh('juryScores'));
+
+        if (! $detailResponse->successful()) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Gagal menyimpan detail partai seni ke server scoring.',
+                'error' => $detailResponse->json() ?? $detailResponse->body(),
+                'payload' => $this->sourceDetailPayload($match->fresh('juryScores')),
+            ], $detailResponse->status());
+        }
+
+        $match->update(['status' => 'done']);
+
+        $freshMatch = $match->fresh('juryScores');
+        $pool = $this->poolForMatch($freshMatch);
+        $this->broadcastSeniUpdate($freshMatch, $pool, 'status_updated');
+
+        $statusResponse = $this->updatePartaiStatusOnSource($freshMatch, 'done');
+
+        if (! $statusResponse->successful()) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Detail tersimpan dan status lokal selesai, tetapi gagal mengirim status selesai ke server scoring.',
+                'error' => $statusResponse->json() ?? $statusResponse->body(),
+                'data' => $freshMatch,
+                'matches' => SeniSingleMatch::orderBy('no_order')->get(),
+                'pool' => $pool,
+            ], $statusResponse->status());
+        }
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Detail partai seni berhasil disimpan.',
+            'data' => $freshMatch,
+            'matches' => SeniSingleMatch::orderBy('no_order')->get(),
+            'pool' => $pool,
+        ]);
+    }
+
+    public function resetMatch(SeniSingleMatch $match)
+    {
+        DB::transaction(function () use ($match): void {
+            $match->juryScores()->delete();
+            $match->update([
+                'status' => 'not_started',
+                'total_score' => null,
+                'total_wiraga' => null,
+                'total_wirasa' => null,
+                'total_wirama' => null,
+                'total_kualitas_teknik' => null,
+                'total_kuantitas_teknik' => null,
+                'total_ketangkasan' => null,
+                'total_stamina' => null,
+                'total_kemantapan' => null,
+                'total_musik' => null,
+                'total_punishment' => null,
+                'time' => null,
+                'rank' => null,
+            ]);
+        });
+
+        $freshMatch = $match->fresh('juryScores');
+        $pool = $this->poolForMatch($freshMatch);
+        $this->broadcastSeniUpdate($freshMatch, $pool, 'match_reset');
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Partai seni berhasil direset.',
             'data' => $freshMatch,
             'matches' => SeniSingleMatch::orderBy('no_order')->get(),
             'pool' => $pool,
@@ -307,6 +413,94 @@ class SeniScoringController extends Controller
         $data = $response->json('data');
 
         return is_array($data) ? $data : [];
+    }
+
+    private function updatePartaiStatusOnSource(SeniSingleMatch $match, string $status): Response
+    {
+        return Http::withHeaders($this->headers())
+            ->post($this->baseUrl().'/partai-seni/partai-status/'.$match->bkp_id, [
+                'status' => $status,
+            ]);
+    }
+
+    private function saveSeniMatchDetailToSource(SeniSingleMatch $match): Response
+    {
+        return Http::withHeaders($this->headers())
+            ->post($this->baseUrl().'/partai-seni/detail-partai-seni-ts/'.$match->bkp_id, $this->sourceDetailPayload($match));
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function sourceDetailPayload(SeniSingleMatch $match): array
+    {
+        $match->loadMissing('juryScores');
+
+        return [
+            'total_score' => $match->total_score,
+            'total_punishment' => $match->total_punishment,
+            'rank' => $match->rank,
+            'is_passed' => $match->is_passed ? 1 : 0,
+            'is_disqualified' => $match->is_disqualified ? 1 : 0,
+            'time' => $match->time,
+            'total_wiraga' => $match->total_wiraga,
+            'total_wirasa' => $match->total_wirasa,
+            'total_wirama' => $match->total_wirama,
+            'total_kualitas_teknik' => $match->total_kualitas_teknik,
+            'total_kuantitas_teknik' => $match->total_kuantitas_teknik,
+            'total_ketangkasan' => $match->total_ketangkasan,
+            'total_stamina' => $match->total_stamina,
+            'total_kemantapan' => $match->total_kemantapan,
+            'total_musik' => $match->total_musik,
+            'tgr_jury_scores' => $this->sourceJuryScores($match),
+            'tgr_jury_total_scores' => $match->juryScores
+                ->map(fn ($score): array => [
+                    'jury_number' => $score->jury_number,
+                    'total_score' => $score->total_score,
+                    'is_accepted' => $score->is_accepted ? 1 : 0,
+                ])
+                ->values()
+                ->all(),
+        ];
+    }
+
+    /**
+     * @return array<int, array<string, mixed>>
+     */
+    private function sourceJuryScores(SeniSingleMatch $match): array
+    {
+        $scoreColumns = [
+            'wiraga',
+            'wirasa',
+            'wirama',
+            'kualitas_teknik',
+            'kuantitas_teknik',
+            'ketangkasan',
+            'stamina',
+            'kemantapan',
+            'musik',
+        ];
+
+        return $match->juryScores
+            ->flatMap(function ($juryScore) use ($scoreColumns): array {
+                $scores = [];
+
+                foreach ($scoreColumns as $column) {
+                    if ($juryScore->{$column} === null) {
+                        continue;
+                    }
+
+                    $scores[] = [
+                        'jury_number' => $juryScore->jury_number,
+                        'score' => $juryScore->{$column},
+                        'ref_tgr_score' => $column,
+                    ];
+                }
+
+                return $scores;
+            })
+            ->values()
+            ->all();
     }
 
     /**

@@ -116,6 +116,8 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::post('/seni/pools/{pool}/sync-matches', [SeniScoringController::class, 'syncPoolMatches']);
         Route::post('/seni/matches/{match}/activate', [SeniScoringController::class, 'activateMatch']);
         Route::post('/seni/matches/{match}/status', [SeniScoringController::class, 'updateMatchStatus']);
+        Route::post('/seni/matches/{match}/save-detail', [SeniScoringController::class, 'saveMatchDetail']);
+        Route::post('/seni/matches/{match}/reset', [SeniScoringController::class, 'resetMatch']);
         Route::post('/partai/sync/{partai_id}', [MatchSyncController::class, 'syncMatch']);
         Route::post('/partai/update-status', [MatchSyncController::class, 'updateStatus']);
         Route::post('/partai/update-round', [MatchSyncController::class, 'updateRound']);

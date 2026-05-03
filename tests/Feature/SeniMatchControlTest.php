@@ -332,6 +332,13 @@ class SeniMatchControlTest extends TestCase
 
     public function test_active_match_status_can_be_updated(): void
     {
+        Http::fake([
+            '*/partai-seni/partai-status/3410' => Http::response([
+                'status' => 'success',
+                'data' => ['status' => 'ongoing'],
+            ], 200),
+        ]);
+
         $operator = Role::create(['name' => 'Operator']);
         $user = User::factory()->create(['role_id' => $operator->id]);
         SeniPool::create([
@@ -367,6 +374,155 @@ class SeniMatchControlTest extends TestCase
         $this->assertDatabaseHas('seni_single_matches', [
             'id' => $match->id,
             'status' => 'ongoing',
+        ]);
+
+        Http::assertSent(fn ($request) => str_contains($request->url(), '/partai-seni/partai-status/3410')
+            && $request['status'] === 'ongoing');
+    }
+
+    public function test_active_match_status_can_save_time_without_syncing_source(): void
+    {
+        Http::fake();
+
+        $operator = Role::create(['name' => 'Operator']);
+        $user = User::factory()->create(['role_id' => $operator->id]);
+        $match = SeniSingleMatch::create([
+            'no_pool_babak_id' => 55,
+            'bkp_id' => 3410,
+            'matches_code' => '135',
+            'atletes' => 'Atlet A',
+            'contingent' => 'Kontingen A',
+            'type' => 'tunggal',
+            'category' => 'Tunggal',
+            'group' => 'Putra',
+            'status' => 'ongoing',
+            'is_active' => true,
+            'round_match' => 'Final',
+            'no_order' => 1,
+        ]);
+
+        $this
+            ->actingAs($user)
+            ->postJson("/api/seni/matches/{$match->id}/status", [
+                'status' => 'paused',
+                'time' => 125,
+                'sync_source' => false,
+            ])
+            ->assertOk()
+            ->assertJsonPath('data.status', 'paused')
+            ->assertJsonPath('data.time', 125);
+
+        $this->assertDatabaseHas('seni_single_matches', [
+            'id' => $match->id,
+            'status' => 'paused',
+            'time' => 125,
+        ]);
+
+        Http::assertNothingSent();
+    }
+
+    public function test_save_match_detail_sends_payload_and_marks_match_done(): void
+    {
+        Http::fake([
+            '*/partai-seni/detail-partai-seni-ts/3410' => Http::response([
+                'status' => 'success',
+            ], 200),
+            '*/partai-seni/partai-status/3410' => Http::response([
+                'status' => 'success',
+            ], 200),
+        ]);
+
+        $operator = Role::create(['name' => 'Operator']);
+        $user = User::factory()->create(['role_id' => $operator->id]);
+        $match = SeniSingleMatch::create([
+            'no_pool_babak_id' => 55,
+            'bkp_id' => 3410,
+            'matches_code' => '135',
+            'atletes' => 'Atlet A',
+            'contingent' => 'Kontingen A',
+            'type' => 'tunggal',
+            'category' => 'Tunggal',
+            'group' => 'Putra',
+            'status' => 'paused',
+            'is_active' => true,
+            'round_match' => 'Final',
+            'no_order' => 1,
+            'total_score' => '378.000',
+            'total_wiraga' => '56.000',
+            'time' => 140,
+        ]);
+        $match->juryScores()->create([
+            'jury_number' => 1,
+            'wiraga' => 56,
+            'total_score' => 56,
+            'is_accepted' => true,
+        ]);
+
+        $this
+            ->actingAs($user)
+            ->postJson("/api/seni/matches/{$match->id}/save-detail")
+            ->assertOk()
+            ->assertJsonPath('data.status', 'done');
+
+        $this->assertDatabaseHas('seni_single_matches', [
+            'id' => $match->id,
+            'status' => 'done',
+        ]);
+
+        Http::assertSent(fn ($request) => str_contains($request->url(), '/partai-seni/detail-partai-seni-ts/3410')
+            && $request['total_score'] === '378.000'
+            && $request['time'] === 140);
+        Http::assertSent(fn ($request) => str_contains($request->url(), '/partai-seni/partai-status/3410')
+            && $request['status'] === 'done');
+    }
+
+    public function test_reset_match_deletes_jury_scores_and_clears_score_values(): void
+    {
+        $operator = Role::create(['name' => 'Operator']);
+        $user = User::factory()->create(['role_id' => $operator->id]);
+        $match = SeniSingleMatch::create([
+            'no_pool_babak_id' => 55,
+            'bkp_id' => 3410,
+            'matches_code' => '135',
+            'atletes' => 'Atlet A',
+            'contingent' => 'Kontingen A',
+            'type' => 'tunggal',
+            'category' => 'Tunggal',
+            'group' => 'Putra',
+            'status' => 'paused',
+            'is_active' => true,
+            'round_match' => 'Final',
+            'no_order' => 1,
+            'total_score' => '378.000',
+            'total_wiraga' => '56.000',
+            'total_punishment' => '1.000',
+            'time' => 140,
+            'rank' => 1,
+        ]);
+        $match->juryScores()->create([
+            'jury_number' => 1,
+            'wiraga' => 56,
+            'total_score' => 56,
+            'is_accepted' => true,
+        ]);
+
+        $this
+            ->actingAs($user)
+            ->postJson("/api/seni/matches/{$match->id}/reset")
+            ->assertOk()
+            ->assertJsonPath('data.status', 'not_started')
+            ->assertJsonPath('data.total_score', null)
+            ->assertJsonPath('data.time', null);
+
+        $this->assertDatabaseCount('seni_jury_scores', 0);
+        $this->assertDatabaseHas('seni_single_matches', [
+            'id' => $match->id,
+            'status' => 'not_started',
+            'total_score' => null,
+            'total_wiraga' => null,
+            'total_punishment' => null,
+            'time' => null,
+            'rank' => null,
         ]);
     }
 }
