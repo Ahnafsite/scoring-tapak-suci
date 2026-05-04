@@ -39,6 +39,30 @@ type SeniPool = {
     no_pool: string | null;
 };
 
+type SeniJuryScore = {
+    jury_number: number;
+    waktu?: string | number | null;
+    wiraga?: string | number | null;
+    wirasa?: string | number | null;
+    wirama?: string | number | null;
+    kualitas_teknik?: string | number | null;
+    kuantitas_teknik?: string | number | null;
+    ketangkasan?: string | number | null;
+    stamina?: string | number | null;
+    kemantapan?: string | number | null;
+    musik?: string | number | null;
+};
+
+type SeniJuryPunishment = {
+    jury_number: number;
+    waktu?: string | number | null;
+    keluar_garis?: string | number | null;
+    'keluar garis'?: string | number | null;
+    senjata_jatuh_atau_tidak_sesuai_deskripsi?: string | number | null;
+    senjata_tidak_jatuh_atau_tidak_sesuai_deskripsi?: string | number | null;
+    akeseoris_jatuh?: string | number | null;
+};
+
 type SeniMatch = {
     id: number;
     bkp_id: number | null;
@@ -67,6 +91,8 @@ type SeniMatch = {
     total_punishment: string | null;
     time: number | null;
     rank: number | null;
+    jury_scores?: SeniJuryScore[];
+    jury_punishments?: SeniJuryPunishment[];
 };
 
 const props = defineProps<{

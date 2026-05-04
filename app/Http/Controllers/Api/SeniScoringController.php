@@ -163,13 +163,18 @@ class SeniScoringController extends Controller
             ));
 
             $match->juryScores()->delete();
+            $match->juryPunishments()->delete();
 
             foreach ($this->mapJuryScores($detail) as $juryScore) {
                 $match->juryScores()->create($juryScore);
             }
+
+            foreach ($this->mapJuryPunishments($detail) as $juryPunishment) {
+                $match->juryPunishments()->create($juryPunishment);
+            }
         });
 
-        $freshMatch = $match->fresh('juryScores');
+        $freshMatch = $match->fresh(['juryScores', 'juryPunishments']);
         $pool = $this->poolForMatch($freshMatch);
         $this->broadcastSeniUpdate($freshMatch, $pool, 'match_activated');
 
@@ -179,6 +184,7 @@ class SeniScoringController extends Controller
             'data' => $freshMatch,
             'matches' => SeniSingleMatch::orderBy('no_order')->get(),
             'jury_scores' => $freshMatch->juryScores,
+            'jury_punishments' => $freshMatch->juryPunishments,
             'pool' => $pool,
         ]);
     }
@@ -206,7 +212,7 @@ class SeniScoringController extends Controller
 
         $match->update($updates);
 
-        $freshMatch = $match->fresh('juryScores');
+        $freshMatch = $match->fresh(['juryScores', 'juryPunishments']);
         $pool = $this->poolForMatch($freshMatch);
         $this->broadcastSeniUpdate($freshMatch, $pool, 'status_updated');
 
@@ -243,20 +249,20 @@ class SeniScoringController extends Controller
             ], 422);
         }
 
-        $detailResponse = $this->saveSeniMatchDetailToSource($match->fresh('juryScores'));
+        $detailResponse = $this->saveSeniMatchDetailToSource($match->fresh(['juryScores', 'juryPunishments']));
 
         if (! $detailResponse->successful()) {
             return response()->json([
                 'success' => false,
                 'message' => 'Gagal menyimpan detail partai seni ke server scoring.',
                 'error' => $detailResponse->json() ?? $detailResponse->body(),
-                'payload' => $this->sourceDetailPayload($match->fresh('juryScores')),
+                'payload' => $this->sourceDetailPayload($match->fresh(['juryScores', 'juryPunishments'])),
             ], $detailResponse->status());
         }
 
         $match->update(['status' => 'done']);
 
-        $freshMatch = $match->fresh('juryScores');
+        $freshMatch = $match->fresh(['juryScores', 'juryPunishments']);
         $pool = $this->poolForMatch($freshMatch);
         $this->broadcastSeniUpdate($freshMatch, $pool, 'status_updated');
 
@@ -286,6 +292,7 @@ class SeniScoringController extends Controller
     {
         DB::transaction(function () use ($match): void {
             $match->juryScores()->delete();
+            $match->juryPunishments()->delete();
             $match->update([
                 'status' => 'not_started',
                 'total_score' => null,
@@ -304,7 +311,7 @@ class SeniScoringController extends Controller
             ]);
         });
 
-        $freshMatch = $match->fresh('juryScores');
+        $freshMatch = $match->fresh(['juryScores', 'juryPunishments']);
         $pool = $this->poolForMatch($freshMatch);
         $this->broadcastSeniUpdate($freshMatch, $pool, 'match_reset');
 
@@ -434,7 +441,7 @@ class SeniScoringController extends Controller
      */
     private function sourceDetailPayload(SeniSingleMatch $match): array
     {
-        $match->loadMissing('juryScores');
+        $match->loadMissing(['juryScores', 'juryPunishments']);
 
         return [
             'total_score' => $match->total_score,
@@ -453,6 +460,7 @@ class SeniScoringController extends Controller
             'total_kemantapan' => $match->total_kemantapan,
             'total_musik' => $match->total_musik,
             'tgr_jury_scores' => $this->sourceJuryScores($match),
+            'tgr_jury_punishments' => $this->sourceJuryPunishments($match),
             'tgr_jury_total_scores' => $match->juryScores
                 ->map(fn ($score): array => [
                     'jury_number' => $score->jury_number,
@@ -469,35 +477,48 @@ class SeniScoringController extends Controller
      */
     private function sourceJuryScores(SeniSingleMatch $match): array
     {
-        $scoreColumns = [
-            'wiraga',
-            'wirasa',
-            'wirama',
-            'kualitas_teknik',
-            'kuantitas_teknik',
-            'ketangkasan',
-            'stamina',
-            'kemantapan',
-            'musik',
-        ];
+        $scoreColumns = $this->scoreColumnsForMatch($match);
+        $punishments = $match->juryPunishments->keyBy('jury_number');
 
         return $match->juryScores
-            ->flatMap(function ($juryScore) use ($scoreColumns): array {
-                $scores = [];
+            ->map(function ($juryScore) use ($punishments, $scoreColumns): array {
+                $row = ['jury_number' => $juryScore->jury_number];
+                $punishment = $punishments->get($juryScore->jury_number);
 
-                foreach ($scoreColumns as $column) {
-                    if ($juryScore->{$column} === null) {
-                        continue;
-                    }
-
-                    $scores[] = [
-                        'jury_number' => $juryScore->jury_number,
-                        'score' => $juryScore->{$column},
-                        'ref_tgr_score' => $column,
-                    ];
+                if ($punishment?->waktu !== null) {
+                    $row['waktu'] = $punishment->waktu;
                 }
 
-                return $scores;
+                foreach ($scoreColumns as $column) {
+                    if ($juryScore->{$column} !== null) {
+                        $row[$column] = $juryScore->{$column};
+                    }
+                }
+
+                return $row;
+            })
+            ->values()
+            ->all();
+    }
+
+    /**
+     * @return array<int, array<string, mixed>>
+     */
+    private function sourceJuryPunishments(SeniSingleMatch $match): array
+    {
+        $punishmentColumns = $this->punishmentColumnsForMatch($match);
+
+        return $match->juryPunishments
+            ->map(function ($juryPunishment) use ($match, $punishmentColumns): array {
+                $row = ['jury_number' => $juryPunishment->jury_number];
+
+                foreach ($punishmentColumns as $column) {
+                    if ($juryPunishment->{$column} !== null) {
+                        $row[$this->sourcePunishmentKey($match, $column)] = $juryPunishment->{$column};
+                    }
+                }
+
+                return $row;
             })
             ->values()
             ->all();
@@ -577,14 +598,15 @@ class SeniScoringController extends Controller
             ->unique()
             ->values();
 
+        $scoreColumns = $this->scoreColumns();
+
         return $juryNumbers
-            ->map(function (mixed $juryNumber) use ($scores, $totals): array {
+            ->map(function (mixed $juryNumber) use ($scores, $totals, $scoreColumns): array {
                 $juryScores = $scores->where('jury_number', $juryNumber);
                 $total = $totals->get($juryNumber, []);
 
                 $data = [
                     'jury_number' => (int) $juryNumber,
-                    'total_score' => $total['total_score'] ?? $juryScores->sum(fn (array $score): float => (float) ($score['score'] ?? 0)),
                     'is_accepted' => (bool) ($total['is_accepted'] ?? false),
                 ];
 
@@ -593,12 +615,181 @@ class SeniScoringController extends Controller
 
                     if ($column) {
                         $data[$column] = $score['score'] ?? null;
+
+                        continue;
+                    }
+
+                    foreach ($scoreColumns as $scoreColumn) {
+                        if (array_key_exists($scoreColumn, $score)) {
+                            $data[$scoreColumn] = $score[$scoreColumn];
+                        }
                     }
                 }
+
+                $data['total_score'] = $total['total_score'] ?? collect($scoreColumns)
+                    ->sum(fn (string $scoreColumn): float => (float) ($data[$scoreColumn] ?? 0));
 
                 return $data;
             })
             ->all();
+    }
+
+    /**
+     * @param  array<string, mixed>  $detail
+     * @return array<int, array<string, mixed>>
+     */
+    private function mapJuryPunishments(array $detail): array
+    {
+        $punishments = collect($detail['tgr_jury_punishments'] ?? $detail['seni_jury_punishments'] ?? $detail['jury_punishments'] ?? []);
+        $scores = collect($detail['tgr_jury_scores'] ?? $detail['seni_jury_scores'] ?? $detail['jury_scores'] ?? []);
+        $punishmentColumns = $this->punishmentColumns();
+        $sourceRows = $scores
+            ->filter(fn (array $score): bool => collect($punishmentColumns)->contains(
+                fn (string $column): bool => $this->punishmentValue($score, $column) !== null
+            ))
+            ->merge($punishments);
+
+        $data = [];
+
+        foreach ($sourceRows as $punishment) {
+            $juryNumber = $punishment['jury_number'] ?? null;
+
+            if (! $juryNumber) {
+                continue;
+            }
+
+            $data[$juryNumber] ??= ['jury_number' => (int) $juryNumber];
+
+            foreach ($punishmentColumns as $column) {
+                $value = $this->punishmentValue($punishment, $column);
+
+                if ($value !== null) {
+                    $data[$juryNumber][$column] = $value;
+                }
+            }
+        }
+
+        ksort($data);
+
+        return array_values($data);
+    }
+
+    /**
+     * @return array<int, string>
+     */
+    private function scoreColumns(): array
+    {
+        return [
+            'wiraga',
+            'wirasa',
+            'wirama',
+            'kualitas_teknik',
+            'kuantitas_teknik',
+            'ketangkasan',
+            'stamina',
+            'kemantapan',
+            'musik',
+        ];
+    }
+
+    /**
+     * @return array<int, string>
+     */
+    private function scoreColumnsForMatch(SeniSingleMatch $match): array
+    {
+        if ($this->isTechniqueMatch($match)) {
+            return [
+                'kualitas_teknik',
+                'kuantitas_teknik',
+                'ketangkasan',
+                'stamina',
+                'kemantapan',
+                'musik',
+            ];
+        }
+
+        return [
+            'wiraga',
+            'wirasa',
+            'wirama',
+        ];
+    }
+
+    /**
+     * @return array<int, string>
+     */
+    private function punishmentColumns(): array
+    {
+        return [
+            'waktu',
+            'keluar_garis',
+            'senjata_jatuh_atau_tidak_sesuai_deskripsi',
+            'senjata_tidak_jatuh_atau_tidak_sesuai_deskripsi',
+            'akeseoris_jatuh',
+        ];
+    }
+
+    /**
+     * @return array<int, string>
+     */
+    private function punishmentColumnsForMatch(SeniSingleMatch $match): array
+    {
+        if ($this->isTechniqueMatch($match)) {
+            return [
+                'waktu',
+                'keluar_garis',
+                'senjata_jatuh_atau_tidak_sesuai_deskripsi',
+                'senjata_tidak_jatuh_atau_tidak_sesuai_deskripsi',
+            ];
+        }
+
+        return [
+            'waktu',
+            'keluar_garis',
+            'senjata_jatuh_atau_tidak_sesuai_deskripsi',
+            'akeseoris_jatuh',
+        ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $punishment
+     */
+    private function punishmentValue(array $punishment, string $column): mixed
+    {
+        $sourceKeys = match ($column) {
+            'keluar_garis' => ['keluar_garis', 'keluar garis'],
+            default => [$column],
+        };
+
+        foreach ($sourceKeys as $sourceKey) {
+            if (array_key_exists($sourceKey, $punishment)) {
+                return $punishment[$sourceKey];
+            }
+        }
+
+        return null;
+    }
+
+    private function sourcePunishmentKey(SeniSingleMatch $match, string $column): string
+    {
+        if ($column === 'keluar_garis' && $this->isTechniqueMatch($match)) {
+            return 'keluar garis';
+        }
+
+        return $column;
+    }
+
+    private function isTechniqueMatch(SeniSingleMatch $match): bool
+    {
+        $matchText = collect([
+            $match->type,
+            $match->category,
+            $match->group,
+        ])
+            ->filter()
+            ->implode(' ');
+
+        return str($matchText)->lower()->contains(['ganda', 'trio']);
     }
 
     private function scoreColumn(?string $scoreName): ?string

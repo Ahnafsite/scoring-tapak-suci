@@ -33,4 +33,9 @@ class SeniSingleMatch extends Model
     {
         return $this->hasMany(SeniJuryScore::class);
     }
+
+    public function juryPunishments(): HasMany
+    {
+        return $this->hasMany(SeniJuryPunishment::class);
+    }
 }
