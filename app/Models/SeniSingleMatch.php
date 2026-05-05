@@ -31,11 +31,11 @@ class SeniSingleMatch extends Model
 
     public function juryScores(): HasMany
     {
-        return $this->hasMany(SeniJuryScore::class);
+        return $this->hasMany(SeniJuryScore::class)->orderBy('jury_number');
     }
 
     public function juryPunishments(): HasMany
     {
-        return $this->hasMany(SeniJuryPunishment::class);
+        return $this->hasMany(SeniJuryPunishment::class)->orderBy('jury_number');
     }
 }

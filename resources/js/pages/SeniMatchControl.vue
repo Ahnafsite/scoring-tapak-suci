@@ -2,13 +2,18 @@
 import { Head, router } from '@inertiajs/vue3';
 import axios from 'axios';
 import { RefreshCw } from 'lucide-vue-next';
-import { computed, ref } from 'vue';
+import { computed, onMounted, onUnmounted, ref } from 'vue';
 import { toast } from 'vue-sonner';
 import FightFullscreenButton from '@/components/fight/FightFullscreenButton.vue';
 import FightWaitingState from '@/components/fight/FightWaitingState.vue';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader } from '@/components/ui/card';
+import {
+    Card,
+    CardContent,
+    CardFooter,
+    CardHeader,
+} from '@/components/ui/card';
 import {
     Dialog,
     DialogContent,
@@ -113,6 +118,7 @@ const isLoading = ref(false);
 const isRefreshing = ref(false);
 const isConfirmDialogOpen = ref(false);
 const isMatchConfirmDialogOpen = ref(false);
+const isResetDialogOpen = ref(false);
 const isTimeDialogOpen = ref(false);
 const isSyncing = ref(false);
 const isActivatingMatch = ref(false);
@@ -125,8 +131,8 @@ const gelanggangList = ref<any[]>([]);
 const sesiList = ref<any[]>([]);
 const selectedGelanggang = ref('');
 const selectedSesi = ref('');
-const performanceMinute = ref(0);
-const performanceSecond = ref(0);
+const performanceMinute = ref('');
+const performanceSecond = ref('');
 
 const {
     buttonTitle,
@@ -171,6 +177,25 @@ const activeMatch = computed(() => {
     return currentMatches.value.find((match) => match.is_active) ?? null;
 });
 
+const replaceMatchInCurrentMatches = (updatedMatch: SeniMatch | null) => {
+    if (!updatedMatch) {
+        return;
+    }
+
+    const index = currentMatches.value.findIndex(
+        (match) => match.id === updatedMatch.id,
+    );
+
+    if (index === -1) {
+        return;
+    }
+
+    currentMatches.value.splice(index, 1, {
+        ...currentMatches.value[index],
+        ...updatedMatch,
+    });
+};
+
 const hasLockedMatch = computed(() => {
     return currentMatches.value.some((match) =>
         ['ongoing', 'paused'].includes(match.status),
@@ -196,12 +221,12 @@ const statusMeta = (status: string | null | undefined) => {
         case 'ongoing':
             return {
                 label: 'Sedang Berlangsung',
-                class: 'border-blue-500/25 bg-blue-500/15 text-blue-400',
+                class: 'border-yellow-500/25 bg-yellow-500/15 text-yellow-400',
             };
         case 'paused':
             return {
                 label: 'Dijeda',
-                class: 'border-yellow-500/25 bg-yellow-500/15 text-yellow-400',
+                class: 'border-blue-500/25 bg-blue-500/15 text-blue-400',
             };
         case 'done':
             return {
@@ -211,7 +236,7 @@ const statusMeta = (status: string | null | undefined) => {
         default:
             return {
                 label: 'Belum Mulai',
-                class: 'border-gray-400/25 bg-gray-400/15 text-gray-400',
+                class: 'border-red-400/25 bg-red-400/15 text-red-400',
             };
     }
 };
@@ -259,18 +284,59 @@ const activeScoreRows = computed(() => {
         return [
             { label: 'Kualitas Teknik', value: match.total_kualitas_teknik },
             { label: 'Kuantitas Teknik', value: match.total_kuantitas_teknik },
-            { label: 'Ketangkasan', value: match.total_ketangkasan },
-            { label: 'Stamina', value: match.total_stamina },
-            { label: 'Kemantapan', value: match.total_kemantapan },
-            { label: 'Musik', value: match.total_musik },
+            {
+                isPunishment: true,
+                label: 'Hukuman',
+                value: match.total_punishment,
+            },
         ];
     }
 
     return [
         { label: 'Wiraga', value: match.total_wiraga },
-        { label: 'Wirasa', value: match.total_wirasa },
         { label: 'Wirama', value: match.total_wirama },
+        {
+            isPunishment: true,
+            label: 'Hukuman',
+            value: match.total_punishment,
+        },
     ];
+});
+
+const activeIdentityRows = computed(() => {
+    const match = activeMatch.value;
+
+    if (!match) {
+        return [];
+    }
+
+    if (isTechniqueMatch(match)) {
+        return [
+            { label: 'Kontingen', value: match.contingent },
+            { label: 'Nama', value: match.atletes },
+        ];
+    }
+
+    return [
+        { label: 'Nama', value: match.atletes },
+        { label: 'Kontingen', value: match.contingent },
+    ];
+});
+
+const activeMetaRows = computed(() => {
+    const match = activeMatch.value;
+
+    if (!match) {
+        return [];
+    }
+
+    const rows = [{ label: 'Rank', value: scoreValue(match.rank) }];
+
+    if (!isTechniqueMatch(match)) {
+        rows.push({ label: 'Waktu', value: formatTime(match.time) });
+    }
+
+    return rows;
 });
 
 const fetchGelanggang = async () => {
@@ -476,6 +542,7 @@ const activatePendingMatch = async () => {
 
         selectedPool.value = response.data?.pool ?? selectedPool.value;
         currentMatches.value = response.data?.matches ?? currentMatches.value;
+        replaceMatchInCurrentMatches(response.data?.data ?? null);
         isMatchConfirmDialogOpen.value = false;
         pendingMatch.value = null;
         toast.success('Data partai seni berhasil dimuat.');
@@ -509,6 +576,7 @@ const updateActiveMatchStatus = async (
 
         selectedPool.value = response.data?.pool ?? selectedPool.value;
         currentMatches.value = response.data?.matches ?? currentMatches.value;
+        replaceMatchInCurrentMatches(response.data?.data ?? null);
         toast.success('Status partai seni berhasil diperbarui.');
 
         return response.data;
@@ -535,13 +603,26 @@ const triggerPause = async () => {
         return;
     }
 
-    const currentTime = Number(activeMatch.value.time ?? 0);
-    performanceMinute.value = Math.floor(currentTime / 60);
-    performanceSecond.value = Math.floor(currentTime % 60);
+    if (
+        activeMatch.value.time === null ||
+        activeMatch.value.time === undefined
+    ) {
+        performanceMinute.value = '';
+        performanceSecond.value = '';
+    } else {
+        const currentTime = Number(activeMatch.value.time);
+
+        performanceMinute.value = formatTimerPart(Math.floor(currentTime / 60));
+        performanceSecond.value = formatTimerPart(Math.floor(currentTime % 60));
+    }
+
     isTimeDialogOpen.value = true;
 };
 
 const savePerformanceTime = async () => {
+    normalizeTimerPart('minute');
+    normalizeTimerPart('second');
+
     const minute = Math.max(0, Number(performanceMinute.value) || 0);
     const second = Math.min(
         59,
@@ -597,7 +678,11 @@ const triggerSave = async () => {
     }
 };
 
-const triggerReset = async () => {
+const triggerReset = () => {
+    isResetDialogOpen.value = true;
+};
+
+const confirmReset = async () => {
     if (!activeMatch.value) {
         return;
     }
@@ -611,6 +696,7 @@ const triggerReset = async () => {
 
         selectedPool.value = response.data?.pool ?? selectedPool.value;
         currentMatches.value = response.data?.matches ?? currentMatches.value;
+        isResetDialogOpen.value = false;
         toast.success('Partai seni berhasil direset.');
     } catch (e) {
         console.error('Failed to reset seni match', e);
@@ -620,26 +706,123 @@ const triggerReset = async () => {
     }
 };
 
+const formatTimerPart = (value: string | number | null | undefined) => {
+    if (value === null || value === undefined || value === '') {
+        return '';
+    }
+
+    const numberValue = Number(value);
+
+    if (!Number.isFinite(numberValue)) {
+        return '';
+    }
+
+    return Math.max(0, Math.floor(numberValue)).toString().padStart(2, '0');
+};
+
+const normalizeTimerPart = (part: 'minute' | 'second') => {
+    const currentValue =
+        part === 'minute' ? performanceMinute.value : performanceSecond.value;
+    const numericText = currentValue.replace(/\D/g, '').slice(0, 2);
+
+    if (numericText === '') {
+        if (part === 'minute') {
+            performanceMinute.value = '';
+        } else {
+            performanceSecond.value = '';
+        }
+
+        return;
+    }
+
+    const numericValue =
+        part === 'second'
+            ? Math.min(59, Number(numericText))
+            : Number(numericText);
+    const formattedValue = formatTimerPart(numericValue);
+
+    if (part === 'minute') {
+        performanceMinute.value = formattedValue;
+    } else {
+        performanceSecond.value = formattedValue;
+    }
+};
+
+const displayValue = (value: string | number | null | undefined) => {
+    if (value === null || value === undefined || value === '') {
+        return 0;
+    }
+
+    return value;
+};
+
+const punishmentValue = (value: string | number | null | undefined) => {
+    return `-${scoreValue(value)}`;
+};
+
 const scoreValue = (value: string | number | null | undefined) => {
-    return value ?? '-';
+    if (value === null || value === undefined || value === '') {
+        return 0;
+    }
+
+    if (typeof value === 'number') {
+        return Number.isInteger(value) ? value.toString() : value.toString();
+    }
+
+    const cleanedValue = value.trim().replace(/,/g, '');
+    const numericValue = Number(cleanedValue);
+
+    if (cleanedValue !== '' && Number.isFinite(numericValue)) {
+        return numericValue.toString();
+    }
+
+    return value;
 };
 
 const formatTime = (value: string | number | null | undefined) => {
     if (value === null || value === undefined || value === '') {
-        return '-';
+        return '00:00';
     }
 
     const seconds = Number(value);
 
     if (Number.isNaN(seconds)) {
-        return value;
+        return '00:00';
     }
 
     const minutes = Math.floor(seconds / 60);
     const remainingSeconds = Math.max(0, Math.floor(seconds % 60));
 
-    return `${minutes}:${remainingSeconds.toString().padStart(2, '0')}`;
+    return `${minutes.toString().padStart(2, '0')}:${remainingSeconds.toString().padStart(2, '0')}`;
 };
+
+let echoScoreChannel: any = null;
+
+onMounted(() => {
+    const echo = (window as any).Echo;
+
+    if (echo) {
+        echoScoreChannel = echo
+            .channel('seni.match.score')
+            .listen('.SeniJuryScoreUpdated', (event: any) => {
+                if (event.match) {
+                    replaceMatchInCurrentMatches(event.match);
+                }
+            });
+    }
+});
+
+onUnmounted(() => {
+    if (echoScoreChannel) {
+        echoScoreChannel.stopListening('.SeniJuryScoreUpdated');
+
+        const echo = (window as any).Echo;
+
+        if (echo) {
+            echo.leaveChannel('seni.match.score');
+        }
+    }
+});
 </script>
 
 <template>
@@ -783,7 +966,7 @@ const formatTime = (value: string | number | null | undefined) => {
                     >
                         <div class="min-h-0">
                             <Card
-                                class="h-full gap-0 overflow-hidden border-stone-800 bg-zinc-900 py-0 shadow-lg"
+                                class="flex h-full flex-col gap-0 overflow-hidden border-stone-800 bg-zinc-900 py-0 shadow-lg"
                             >
                                 <CardHeader
                                     class="border-b border-stone-800 bg-black/30 px-5 py-4"
@@ -803,54 +986,44 @@ const formatTime = (value: string | number | null | undefined) => {
                                                 {{
                                                     activeMatch?.matches_code
                                                         ? 'Partai ' +
-                                                          activeMatch.matches_code
-                                                        : '-'
+                                                          displayValue(
+                                                              activeMatch.matches_code,
+                                                          )
+                                                        : 0
                                                 }}
                                             </p>
                                         </div>
-                                        <Badge
-                                            v-if="activeMatch"
-                                            :class="[
-                                                'shrink-0 uppercase',
-                                                statusMeta(activeMatch.status)
-                                                    .class,
-                                            ]"
-                                        >
-                                            {{
-                                                statusMeta(activeMatch.status)
-                                                    .label
-                                            }}
-                                        </Badge>
                                     </div>
                                 </CardHeader>
 
                                 <CardContent
                                     v-if="activeMatch"
-                                    class="custom-scrollbar flex h-full flex-col overflow-y-auto px-5 py-5"
+                                    class="custom-scrollbar flex flex-1 flex-col overflow-y-auto px-5 py-5"
                                 >
-                                    <div class="space-y-1">
+                                    <div
+                                        v-for="(
+                                            row, index
+                                        ) in activeIdentityRows"
+                                        :key="row.label"
+                                        :class="[
+                                            'space-y-1',
+                                            index > 0 ? 'mt-5' : '',
+                                        ]"
+                                    >
                                         <p
                                             class="text-[11px] font-black tracking-widest text-muted-foreground uppercase"
                                         >
-                                            Nama Atlet
+                                            {{ row.label }}
                                         </p>
                                         <p
-                                            class="text-lg leading-tight font-black text-white uppercase"
+                                            :class="[
+                                                'font-bold text-white uppercase',
+                                                row.label === 'Nama'
+                                                    ? 'text-lg leading-tight font-black'
+                                                    : 'text-sm',
+                                            ]"
                                         >
-                                            {{ activeMatch.atletes ?? '-' }}
-                                        </p>
-                                    </div>
-
-                                    <div class="mt-5 space-y-1">
-                                        <p
-                                            class="text-[11px] font-black tracking-widest text-muted-foreground uppercase"
-                                        >
-                                            Kontingen
-                                        </p>
-                                        <p
-                                            class="text-sm font-bold text-white uppercase"
-                                        >
-                                            {{ activeMatch.contingent ?? '-' }}
+                                            {{ displayValue(row.value) }}
                                         </p>
                                     </div>
 
@@ -875,35 +1048,19 @@ const formatTime = (value: string | number | null | undefined) => {
 
                                     <div class="mt-4 grid grid-cols-2 gap-3">
                                         <div
+                                            v-for="row in activeMetaRows"
+                                            :key="row.label"
                                             class="rounded-md border border-stone-800 bg-black/30 p-3"
                                         >
                                             <p
                                                 class="text-[10px] font-black tracking-widest text-muted-foreground uppercase"
                                             >
-                                                Waktu
+                                                {{ row.label }}
                                             </p>
                                             <p
                                                 class="mt-1 text-xl font-black text-white tabular-nums"
                                             >
-                                                {{
-                                                    formatTime(activeMatch.time)
-                                                }}
-                                            </p>
-                                        </div>
-                                        <div
-                                            class="rounded-md border border-stone-800 bg-black/30 p-3"
-                                        >
-                                            <p
-                                                class="text-[10px] font-black tracking-widest text-muted-foreground uppercase"
-                                            >
-                                                Rank
-                                            </p>
-                                            <p
-                                                class="mt-1 text-xl font-black text-white tabular-nums"
-                                            >
-                                                {{
-                                                    scoreValue(activeMatch.rank)
-                                                }}
+                                                {{ row.value }}
                                             </p>
                                         </div>
                                     </div>
@@ -920,9 +1077,20 @@ const formatTime = (value: string | number | null | undefined) => {
                                                 {{ row.label }}
                                             </span>
                                             <span
-                                                class="font-black text-white tabular-nums"
+                                                :class="[
+                                                    'font-black tabular-nums',
+                                                    row.isPunishment
+                                                        ? 'text-red-500'
+                                                        : 'text-white',
+                                                ]"
                                             >
-                                                {{ scoreValue(row.value) }}
+                                                {{
+                                                    row.isPunishment
+                                                        ? punishmentValue(
+                                                              row.value,
+                                                          )
+                                                        : scoreValue(row.value)
+                                                }}
                                             </span>
                                         </div>
                                     </div>
@@ -937,6 +1105,23 @@ const formatTime = (value: string | number | null | undefined) => {
                                         Pilih baris partai lalu muat data.
                                     </p>
                                 </CardContent>
+
+                                <CardFooter
+                                    v-if="activeMatch"
+                                    class="border-t border-stone-800 bg-black/30 px-5 py-4"
+                                >
+                                    <Badge
+                                        :class="[
+                                            'w-full justify-center py-3 text-lg font-black tracking-widest uppercase',
+                                            statusMeta(activeMatch.status)
+                                                .class,
+                                        ]"
+                                    >
+                                        {{
+                                            statusMeta(activeMatch.status).label
+                                        }}
+                                    </Badge>
+                                </CardFooter>
                             </Card>
                         </div>
 
@@ -971,7 +1156,7 @@ const formatTime = (value: string | number | null | undefined) => {
                                                 No Urut
                                             </th>
                                             <th class="px-3 py-3 text-left">
-                                                No Partai
+                                                Partai
                                             </th>
                                             <th
                                                 class="min-w-44 px-3 py-3 text-left"
@@ -981,16 +1166,13 @@ const formatTime = (value: string | number | null | undefined) => {
                                             <th
                                                 class="min-w-56 px-3 py-3 text-left"
                                             >
-                                                Nama Atlet
-                                            </th>
-                                            <th class="px-3 py-3 text-right">
-                                                Waktu
+                                                Nama
                                             </th>
                                             <th class="px-3 py-3 text-right">
                                                 Rank
                                             </th>
                                             <th class="px-3 py-3 text-right">
-                                                Total Nilai
+                                                Total
                                             </th>
                                             <template
                                                 v-if="scoringMode === 'tgr'"
@@ -999,11 +1181,6 @@ const formatTime = (value: string | number | null | undefined) => {
                                                     class="px-3 py-3 text-right"
                                                 >
                                                     Wiraga
-                                                </th>
-                                                <th
-                                                    class="px-3 py-3 text-right"
-                                                >
-                                                    Wirasa
                                                 </th>
                                                 <th
                                                     class="px-3 py-3 text-right"
@@ -1022,27 +1199,13 @@ const formatTime = (value: string | number | null | undefined) => {
                                                 >
                                                     Kuantitas Teknik
                                                 </th>
-                                                <th
-                                                    class="px-3 py-3 text-right"
-                                                >
-                                                    Ketangkasan
-                                                </th>
-                                                <th
-                                                    class="px-3 py-3 text-right"
-                                                >
-                                                    Stamina
-                                                </th>
-                                                <th
-                                                    class="px-3 py-3 text-right"
-                                                >
-                                                    Kemantapan
-                                                </th>
-                                                <th
-                                                    class="px-3 py-3 text-right"
-                                                >
-                                                    Musik
-                                                </th>
                                             </template>
+                                            <th class="px-3 py-3 text-right">
+                                                Hukuman
+                                            </th>
+                                            <th class="px-3 py-3 text-right">
+                                                Waktu
+                                            </th>
                                         </tr>
                                     </thead>
                                     <tbody class="divide-y divide-stone-800">
@@ -1062,11 +1225,13 @@ const formatTime = (value: string | number | null | undefined) => {
                                             ]"
                                         >
                                             <td class="px-3 py-3 font-bold">
-                                                {{ scoreValue(match.no_order) }}
+                                                {{
+                                                    displayValue(match.no_order)
+                                                }}
                                             </td>
                                             <td class="px-3 py-3 font-bold">
                                                 {{
-                                                    scoreValue(
+                                                    displayValue(
                                                         match.matches_code,
                                                     )
                                                 }}
@@ -1075,14 +1240,15 @@ const formatTime = (value: string | number | null | undefined) => {
                                                 class="px-3 py-3 font-semibold uppercase"
                                             >
                                                 {{
-                                                    scoreValue(match.contingent)
+                                                    displayValue(
+                                                        match.contingent,
+                                                    )
                                                 }}
                                             </td>
                                             <td class="px-3 py-3 uppercase">
-                                                {{ scoreValue(match.atletes) }}
-                                            </td>
-                                            <td class="px-3 py-3 text-right">
-                                                {{ formatTime(match.time) }}
+                                                {{
+                                                    displayValue(match.atletes)
+                                                }}
                                             </td>
                                             <td class="px-3 py-3 text-right">
                                                 {{ scoreValue(match.rank) }}
@@ -1105,15 +1271,6 @@ const formatTime = (value: string | number | null | undefined) => {
                                                     {{
                                                         scoreValue(
                                                             match.total_wiraga,
-                                                        )
-                                                    }}
-                                                </td>
-                                                <td
-                                                    class="px-3 py-3 text-right"
-                                                >
-                                                    {{
-                                                        scoreValue(
-                                                            match.total_wirasa,
                                                         )
                                                     }}
                                                 </td>
@@ -1146,43 +1303,19 @@ const formatTime = (value: string | number | null | undefined) => {
                                                         )
                                                     }}
                                                 </td>
-                                                <td
-                                                    class="px-3 py-3 text-right"
-                                                >
-                                                    {{
-                                                        scoreValue(
-                                                            match.total_ketangkasan,
-                                                        )
-                                                    }}
-                                                </td>
-                                                <td
-                                                    class="px-3 py-3 text-right"
-                                                >
-                                                    {{
-                                                        scoreValue(
-                                                            match.total_stamina,
-                                                        )
-                                                    }}
-                                                </td>
-                                                <td
-                                                    class="px-3 py-3 text-right"
-                                                >
-                                                    {{
-                                                        scoreValue(
-                                                            match.total_kemantapan,
-                                                        )
-                                                    }}
-                                                </td>
-                                                <td
-                                                    class="px-3 py-3 text-right"
-                                                >
-                                                    {{
-                                                        scoreValue(
-                                                            match.total_musik,
-                                                        )
-                                                    }}
-                                                </td>
                                             </template>
+                                            <td
+                                                class="px-3 py-3 text-right font-black text-red-500"
+                                            >
+                                                {{
+                                                    punishmentValue(
+                                                        match.total_punishment,
+                                                    )
+                                                }}
+                                            </td>
+                                            <td class="px-3 py-3 text-right">
+                                                {{ formatTime(match.time) }}
+                                            </td>
                                         </tr>
                                     </tbody>
                                 </table>
@@ -1433,14 +1566,17 @@ const formatTime = (value: string | number | null | undefined) => {
                                 Menit
                             </Label>
                             <Input
-                                v-model.number="performanceMinute"
-                                type="number"
-                                min="0"
-                                class="h-11 text-center text-lg font-black tabular-nums"
+                                v-model="performanceMinute"
+                                type="text"
+                                inputmode="numeric"
+                                maxlength="2"
+                                placeholder="00"
+                                class="h-24 text-center !text-6xl leading-none font-black tabular-nums placeholder:text-zinc-600 md:!text-6xl"
+                                @blur="normalizeTimerPart('minute')"
                             />
                         </div>
 
-                        <div class="pb-2 text-2xl font-black text-white">:</div>
+                        <div class="pb-5 text-6xl font-black text-white">:</div>
 
                         <div class="grid gap-2">
                             <Label
@@ -1449,11 +1585,13 @@ const formatTime = (value: string | number | null | undefined) => {
                                 Detik
                             </Label>
                             <Input
-                                v-model.number="performanceSecond"
-                                type="number"
-                                min="0"
-                                max="59"
-                                class="h-11 text-center text-lg font-black tabular-nums"
+                                v-model="performanceSecond"
+                                type="text"
+                                inputmode="numeric"
+                                maxlength="2"
+                                placeholder="00"
+                                class="h-24 text-center !text-6xl leading-none font-black tabular-nums placeholder:text-zinc-600 md:!text-6xl"
+                                @blur="normalizeTimerPart('second')"
                             />
                         </div>
                     </div>
@@ -1472,6 +1610,46 @@ const formatTime = (value: string | number | null | undefined) => {
                         :disabled="isSavingTime || isUpdatingStatus"
                     >
                         {{ isSavingTime ? 'Menyimpan...' : 'Simpan' }}
+                    </Button>
+                </DialogFooter>
+            </DialogContent>
+        </Dialog>
+
+        <Dialog
+            :open="isResetDialogOpen"
+            @update:open="isResetDialogOpen = $event"
+        >
+            <DialogContent class="sm:max-w-[400px]">
+                <DialogHeader class="pb-2">
+                    <DialogTitle class="text-xl font-bold text-primary">
+                        Reset Partai Seni?
+                    </DialogTitle>
+                    <DialogDescription
+                        class="pt-2 text-sm text-muted-foreground"
+                    >
+                        Ini akan menghapus data nilai dan hukuman pada partai
+                        aktif.
+                    </DialogDescription>
+                </DialogHeader>
+
+                <DialogFooter class="pt-2">
+                    <Button
+                        variant="ghost"
+                        @click="isResetDialogOpen = false"
+                        :disabled="isResetting"
+                    >
+                        Batal
+                    </Button>
+                    <Button
+                        variant="destructive"
+                        @click="confirmReset"
+                        :disabled="isResetting"
+                    >
+                        <RefreshCw
+                            v-if="isResetting"
+                            class="mr-2 h-4 w-4 animate-spin"
+                        />
+                        {{ isResetting ? 'Mereset...' : 'Ya' }}
                     </Button>
                 </DialogFooter>
             </DialogContent>

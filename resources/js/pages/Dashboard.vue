@@ -18,8 +18,10 @@ import {
     fightMatchControl,
     seniMatchControl,
     fightSecretary,
+    seniSecretary,
     fightStreaming,
     fightJury,
+    seniJury,
     timer,
 } from '@/routes';
 
@@ -70,24 +72,46 @@ const handleLogout = () => {
             <template
                 v-else-if="page.props.auth?.user?.role?.name === 'Sekretaris'"
             >
-                <Link :href="fightSecretary().url">
-                    <Button
-                        size="lg"
-                        class="rounded-xl px-8 py-6 text-lg font-semibold"
-                    >
-                        Sekretaris Pertandingan
-                    </Button>
-                </Link>
+                <div class="flex flex-col gap-4">
+                    <Link :href="fightSecretary().url">
+                        <Button
+                            size="lg"
+                            class="w-full rounded-xl px-8 py-6 text-lg font-semibold"
+                        >
+                            Tanding Olahraga
+                        </Button>
+                    </Link>
+                    <Link :href="seniSecretary().url">
+                        <Button
+                            size="lg"
+                            variant="secondary"
+                            class="w-full rounded-xl px-8 py-6 text-lg font-semibold"
+                        >
+                            Seni
+                        </Button>
+                    </Link>
+                </div>
             </template>
             <template v-else-if="page.props.auth?.user?.role?.name === 'Juri'">
-                <Link :href="fightJury().url">
-                    <Button
-                        size="lg"
-                        class="rounded-xl px-8 py-6 text-lg font-semibold"
-                    >
-                        Tanding Olahraga
-                    </Button>
-                </Link>
+                <div class="flex flex-col gap-4">
+                    <Link :href="fightJury().url">
+                        <Button
+                            size="lg"
+                            class="w-full rounded-xl px-8 py-6 text-lg font-semibold"
+                        >
+                            Tanding Olahraga
+                        </Button>
+                    </Link>
+                    <Link :href="seniJury().url">
+                        <Button
+                            size="lg"
+                            variant="secondary"
+                            class="w-full rounded-xl px-8 py-6 text-lg font-semibold"
+                        >
+                            Seni
+                        </Button>
+                    </Link>
+                </div>
             </template>
             <template
                 v-else-if="page.props.auth?.user?.role?.name === 'Streamer'"

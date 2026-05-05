@@ -77,6 +77,21 @@ Route::middleware(['auth', 'verified'])->group(function () {
         ]);
     })->name('fight-secretary');
 
+    Route::get('seni-secretary', function (Request $request) {
+        if ($request->user()->role->name !== 'Sekretaris') {
+            abort(403, 'Unauthorized access.');
+        }
+
+        $activeMatch = SeniSingleMatch::with(['juryScores', 'juryPunishments'])
+            ->where('is_active', true)
+            ->first();
+
+        return inertia('SeniSecretary', [
+            'arena' => Arena::first(),
+            'activeMatch' => $activeMatch,
+        ]);
+    })->name('seni-secretary');
+
     Route::get('fight-streaming', function (Request $request) {
         if ($request->user()->role->name !== 'Streamer') {
             abort(403, 'Unauthorized access.');
@@ -107,6 +122,21 @@ Route::middleware(['auth', 'verified'])->group(function () {
         ]);
     })->name('fight-jury');
 
+    Route::get('seni-jury', function (Request $request) {
+        if ($request->user()->role->name !== 'Juri') {
+            abort(403, 'Unauthorized access.');
+        }
+
+        $activeMatch = SeniSingleMatch::with(['juryScores', 'juryPunishments'])
+            ->where('is_active', true)
+            ->first();
+
+        return inertia('SeniJury', [
+            'arena' => Arena::first(),
+            'activeMatch' => $activeMatch,
+        ]);
+    })->name('seni-jury');
+
     Route::prefix('api')->group(function () {
         Route::get('/source/gelanggang', [ScoringSourceController::class, 'getGelanggang']);
         Route::get('/source/sesi/{gelanggang_id}', [ScoringSourceController::class, 'getSesi']);
@@ -116,6 +146,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::post('/seni/pools/{pool}/sync-matches', [SeniScoringController::class, 'syncPoolMatches']);
         Route::post('/seni/matches/{match}/activate', [SeniScoringController::class, 'activateMatch']);
         Route::post('/seni/matches/{match}/status', [SeniScoringController::class, 'updateMatchStatus']);
+        Route::post('/seni/matches/{match}/jury-score', [SeniScoringController::class, 'storeJuryScore']);
         Route::post('/seni/matches/{match}/save-detail', [SeniScoringController::class, 'saveMatchDetail']);
         Route::post('/seni/matches/{match}/reset', [SeniScoringController::class, 'resetMatch']);
         Route::post('/partai/sync/{partai_id}', [MatchSyncController::class, 'syncMatch']);

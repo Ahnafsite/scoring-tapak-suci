@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Api;
 
+use App\Events\SeniJuryScoreUpdated;
 use App\Events\SeniMatchUpdated;
 use App\Http\Controllers\Controller;
 use App\Models\Arena;
@@ -13,6 +14,7 @@ use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Validation\Rule;
+use Illuminate\Validation\ValidationException;
 
 class SeniScoringController extends Controller
 {
@@ -174,7 +176,7 @@ class SeniScoringController extends Controller
             }
         });
 
-        $freshMatch = $match->fresh(['juryScores', 'juryPunishments']);
+        $freshMatch = $this->freshMatchWithSecretaryScores($match);
         $pool = $this->poolForMatch($freshMatch);
         $this->broadcastSeniUpdate($freshMatch, $pool, 'match_activated');
 
@@ -210,9 +212,20 @@ class SeniScoringController extends Controller
             $updates['time'] = $validated['time'];
         }
 
-        $match->update($updates);
+        DB::transaction(function () use ($match, $updates, $validated): void {
+            $lockedMatch = SeniSingleMatch::query()
+                ->whereKey($match->id)
+                ->lockForUpdate()
+                ->firstOrFail();
 
-        $freshMatch = $match->fresh(['juryScores', 'juryPunishments']);
+            $lockedMatch->update($updates);
+
+            if ($validated['status'] === 'paused') {
+                $this->recalculateAcceptedJuryScoresAndMatchTotals($lockedMatch);
+            }
+        });
+
+        $freshMatch = $this->freshMatchWithSecretaryScores($match);
         $pool = $this->poolForMatch($freshMatch);
         $this->broadcastSeniUpdate($freshMatch, $pool, 'status_updated');
 
@@ -262,7 +275,7 @@ class SeniScoringController extends Controller
 
         $match->update(['status' => 'done']);
 
-        $freshMatch = $match->fresh(['juryScores', 'juryPunishments']);
+        $freshMatch = $this->freshMatchWithSecretaryScores($match);
         $pool = $this->poolForMatch($freshMatch);
         $this->broadcastSeniUpdate($freshMatch, $pool, 'status_updated');
 
@@ -311,8 +324,36 @@ class SeniScoringController extends Controller
             ]);
         });
 
-        $freshMatch = $match->fresh(['juryScores', 'juryPunishments']);
+        $freshMatch = $this->freshMatchWithSecretaryScores($match);
         $pool = $this->poolForMatch($freshMatch);
+
+        $detailResponse = $this->saveSeniMatchDetailToSource($freshMatch, true);
+
+        if (! $detailResponse->successful()) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Partai seni lokal sudah direset, tetapi gagal menyimpan reset ke server scoring.',
+                'error' => $detailResponse->json() ?? $detailResponse->body(),
+                'payload' => $this->sourceDetailPayload($freshMatch, true),
+                'data' => $freshMatch,
+                'matches' => SeniSingleMatch::orderBy('no_order')->get(),
+                'pool' => $pool,
+            ], $detailResponse->status());
+        }
+
+        $statusResponse = $this->updatePartaiStatusOnSource($freshMatch, 'not_started');
+
+        if (! $statusResponse->successful()) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Partai seni lokal sudah direset, tetapi gagal mengirim status reset ke server scoring.',
+                'error' => $statusResponse->json() ?? $statusResponse->body(),
+                'data' => $freshMatch,
+                'matches' => SeniSingleMatch::orderBy('no_order')->get(),
+                'pool' => $pool,
+            ], $statusResponse->status());
+        }
+
         $this->broadcastSeniUpdate($freshMatch, $pool, 'match_reset');
 
         return response()->json([
@@ -321,6 +362,100 @@ class SeniScoringController extends Controller
             'data' => $freshMatch,
             'matches' => SeniSingleMatch::orderBy('no_order')->get(),
             'pool' => $pool,
+        ]);
+    }
+
+    public function storeJuryScore(Request $request, SeniSingleMatch $match)
+    {
+        $validated = $request->validate([
+            'jury_number' => ['required', 'integer', 'min:1', 'max:5'],
+            'type' => ['required', Rule::in(['score', 'punishment'])],
+            'field' => ['required', 'string'],
+            'value' => ['required', 'numeric', 'min:0'],
+        ]);
+
+        $field = $validated['field'];
+        $juryNumber = (int) $validated['jury_number'];
+
+        if ($validated['type'] === 'score' && ! in_array($field, $this->scoreColumnsForMatch($match), true)) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Kriteria nilai tidak tersedia untuk partai ini.',
+            ], 422);
+        }
+
+        if ($validated['type'] === 'punishment' && ! in_array($field, $this->punishmentColumnsForMatch($match), true)) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Hukuman tidak tersedia untuk partai ini.',
+            ], 422);
+        }
+
+        $result = DB::transaction(function () use ($match, $validated, $field, $juryNumber): array {
+            $lockedMatch = SeniSingleMatch::query()
+                ->whereKey($match->id)
+                ->lockForUpdate()
+                ->firstOrFail();
+
+            if (! $lockedMatch->is_active || $lockedMatch->status !== 'ongoing') {
+                throw ValidationException::withMessages([
+                    'match' => 'Penilaian hanya dapat disimpan saat partai sedang berlangsung.',
+                ]);
+            }
+
+            $score = $lockedMatch->juryScores()->firstOrNew([
+                'jury_number' => $juryNumber,
+            ]);
+            $punishment = $lockedMatch->juryPunishments()->firstOrNew([
+                'jury_number' => $juryNumber,
+            ]);
+
+            if (! $score->exists) {
+                $score->fill($this->defaultScoreValuesForMatch($lockedMatch));
+            }
+
+            if ($validated['type'] === 'score') {
+                $score->{$field} = $validated['value'];
+            } else {
+                $punishment->{$field} = $validated['value'];
+                $punishment->save();
+            }
+
+            $score->total_score = $this->calculateJuryTotalScore($lockedMatch, $score, $punishment);
+            $score->save();
+
+            $this->recalculateAcceptedJuryScoresAndMatchTotals($lockedMatch);
+
+            $freshMatch = $this->freshMatchWithSecretaryScores($lockedMatch);
+            $freshScore = $score->fresh();
+            $freshPunishment = $punishment->exists ? $punishment->fresh() : null;
+            $pool = $this->poolForMatch($freshMatch);
+
+            return [
+                'match' => $freshMatch,
+                'score' => $freshScore,
+                'punishment' => $freshPunishment,
+                'pool' => $pool,
+            ];
+        });
+
+        $this->broadcastSeniJuryScoreUpdate(
+            $result['match'],
+            $result['score'],
+            $result['punishment'],
+            $validated['type'],
+            $field,
+            $juryNumber
+        );
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Nilai juri seni berhasil disimpan.',
+            'data' => $result['match'],
+            'score' => $result['score'],
+            'punishment' => $result['punishment'],
+            'matches' => SeniSingleMatch::orderBy('no_order')->get(),
+            'pool' => $result['pool'],
         ]);
     }
 
@@ -430,18 +565,22 @@ class SeniScoringController extends Controller
             ]);
     }
 
-    private function saveSeniMatchDetailToSource(SeniSingleMatch $match): Response
+    private function saveSeniMatchDetailToSource(SeniSingleMatch $match, bool $isReset = false): Response
     {
         return Http::withHeaders($this->headers())
-            ->post($this->baseUrl().'/partai-seni/detail-partai-seni-ts/'.$match->bkp_id, $this->sourceDetailPayload($match));
+            ->post($this->baseUrl().'/partai-seni/detail-partai-seni-ts/'.$match->bkp_id, $this->sourceDetailPayload($match, $isReset));
     }
 
     /**
      * @return array<string, mixed>
      */
-    private function sourceDetailPayload(SeniSingleMatch $match): array
+    private function sourceDetailPayload(SeniSingleMatch $match, bool $isReset = false): array
     {
         $match->loadMissing(['juryScores', 'juryPunishments']);
+
+        if ($isReset) {
+            return $this->sourceResetDetailPayload();
+        }
 
         return [
             'total_score' => $match->total_score,
@@ -473,29 +612,60 @@ class SeniScoringController extends Controller
     }
 
     /**
+     * @return array<string, mixed>
+     */
+    private function sourceResetDetailPayload(): array
+    {
+        return [
+            'reset_scores' => true,
+            'delete_scores' => true,
+            'clear_scores' => true,
+            'total_score' => '0.000',
+            'total_nilai' => '0.000',
+            'total_punishment' => '0.000',
+            'total_hukuman' => '0.000',
+            'rank' => 0,
+            'ranking' => 0,
+            'is_passed' => 0,
+            'lanjut' => 0,
+            'is_disqualified' => 0,
+            'is_disqualification' => 0,
+            'time' => 0,
+            'waktu_tampil' => 0,
+            'deviasi' => '0.000',
+            'total_wiraga' => '0.000',
+            'total_wirasa' => '0.000',
+            'total_wirama' => '0.000',
+            'total_kualitas_teknik' => '0.000',
+            'total_kuantitas_teknik' => '0.000',
+            'total_ketangkasan' => '0.000',
+            'total_stamina' => '0.000',
+            'total_kemantapan' => '0.000',
+            'total_musik' => '0.000',
+            'tgr_jury_scores' => [],
+            'tgr_jury_punishments' => [],
+            'tgr_jury_total_scores' => [],
+        ];
+    }
+
+    /**
      * @return array<int, array<string, mixed>>
      */
     private function sourceJuryScores(SeniSingleMatch $match): array
     {
         $scoreColumns = $this->scoreColumnsForMatch($match);
-        $punishments = $match->juryPunishments->keyBy('jury_number');
 
         return $match->juryScores
-            ->map(function ($juryScore) use ($punishments, $scoreColumns): array {
-                $row = ['jury_number' => $juryScore->jury_number];
-                $punishment = $punishments->get($juryScore->jury_number);
-
-                if ($punishment?->waktu !== null) {
-                    $row['waktu'] = $punishment->waktu;
-                }
-
-                foreach ($scoreColumns as $column) {
-                    if ($juryScore->{$column} !== null) {
-                        $row[$column] = $juryScore->{$column};
-                    }
-                }
-
-                return $row;
+            ->flatMap(function ($juryScore) use ($scoreColumns): array {
+                return collect($scoreColumns)
+                    ->filter(fn (string $column): bool => $juryScore->{$column} !== null)
+                    ->map(fn (string $column): array => [
+                        'jury_number' => $juryScore->jury_number,
+                        'score' => $juryScore->{$column},
+                        'ref_tgr_score' => $column,
+                    ])
+                    ->values()
+                    ->all();
             })
             ->values()
             ->all();
@@ -752,6 +922,109 @@ class SeniScoringController extends Controller
     }
 
     /**
+     * @return array<string, int>
+     */
+    private function defaultScoreValuesForMatch(SeniSingleMatch $match): array
+    {
+        if ($this->isTechniqueMatch($match)) {
+            return [
+                'kualitas_teknik' => 40,
+                'kuantitas_teknik' => 20,
+                'ketangkasan' => 20,
+                'stamina' => 10,
+                'kemantapan' => 10,
+                'musik' => 10,
+            ];
+        }
+
+        return [
+            'wiraga' => 40,
+            'wirasa' => 20,
+            'wirama' => 10,
+        ];
+    }
+
+    private function calculateJuryTotalScore(SeniSingleMatch $match, $score, $punishment): float
+    {
+        $scoreTotal = collect($this->scoreColumnsForMatch($match))
+            ->sum(fn (string $column): float => (float) ($score->{$column} ?? 0));
+
+        $punishmentTotal = collect($this->punishmentColumnsForMatch($match))
+            ->sum(fn (string $column): float => (float) ($punishment->{$column} ?? 0));
+
+        return $scoreTotal - $punishmentTotal;
+    }
+
+    private function recalculateAcceptedJuryScoresAndMatchTotals(SeniSingleMatch $match): void
+    {
+        $scores = $match->juryScores()->get();
+
+        if ($scores->isEmpty()) {
+            $this->updateMatchScoreTotals($match, collect(), collect());
+
+            return;
+        }
+
+        $orderedScores = $scores
+            ->sortBy([
+                ['total_score', 'asc'],
+                ['jury_number', 'asc'],
+            ])
+            ->values();
+        $acceptedScores = $orderedScores;
+
+        if ($orderedScores->count() > 3) {
+            $acceptedScores = $orderedScores
+                ->slice(1, $orderedScores->count() - 2)
+                ->values();
+        }
+
+        $acceptedScoreIds = $acceptedScores->pluck('id');
+
+        foreach ($scores as $score) {
+            $isAccepted = $acceptedScoreIds->contains($score->id);
+
+            if ((bool) $score->is_accepted !== $isAccepted) {
+                $score->forceFill(['is_accepted' => $isAccepted])->save();
+            }
+        }
+
+        $acceptedJuryNumbers = $acceptedScores->pluck('jury_number');
+        $acceptedPunishments = $match->juryPunishments()
+            ->whereIn('jury_number', $acceptedJuryNumbers)
+            ->get();
+
+        $this->updateMatchScoreTotals($match, $acceptedScores, $acceptedPunishments);
+    }
+
+    private function updateMatchScoreTotals(SeniSingleMatch $match, $acceptedScores, $acceptedPunishments): void
+    {
+        $updates = [
+            'total_score' => $acceptedScores->sum(fn ($score): float => (float) ($score->total_score ?? 0)),
+            'total_wiraga' => null,
+            'total_wirasa' => null,
+            'total_wirama' => null,
+            'total_kualitas_teknik' => null,
+            'total_kuantitas_teknik' => null,
+            'total_ketangkasan' => null,
+            'total_stamina' => null,
+            'total_kemantapan' => null,
+            'total_musik' => null,
+            'total_punishment' => $acceptedPunishments->sum(function ($punishment) use ($match): float {
+                return collect($this->punishmentColumnsForMatch($match))
+                    ->sum(fn (string $column): float => (float) ($punishment->{$column} ?? 0));
+            }),
+        ];
+
+        foreach ($this->scoreColumnsForMatch($match) as $column) {
+            $updates["total_{$column}"] = $acceptedScores
+                ->sum(fn ($score): float => (float) ($score->{$column} ?? 0));
+        }
+
+        $match->forceFill($updates)->save();
+    }
+
+    /**
      * @param  array<string, mixed>  $punishment
      */
     private function punishmentValue(array $punishment, string $column): mixed
@@ -826,12 +1099,33 @@ class SeniScoringController extends Controller
         return SeniPool::where('no_pool_babak_id', $match->no_pool_babak_id)->first();
     }
 
+    private function freshMatchWithSecretaryScores(SeniSingleMatch $match): SeniSingleMatch
+    {
+        return SeniSingleMatch::with(['juryScores', 'juryPunishments'])->findOrFail($match->id);
+    }
+
     private function broadcastSeniUpdate(?SeniSingleMatch $match, ?SeniPool $pool, string $status): void
     {
         try {
             broadcast(new SeniMatchUpdated($match, $pool, $status))->toOthers();
         } catch (\Throwable $e) {
             \Log::warning('Broadcasting SeniMatchUpdated failed: '.$e->getMessage());
+        }
+    }
+
+    private function broadcastSeniJuryScoreUpdate($match, $score, $punishment, string $type, string $field, int $juryNumber): void
+    {
+        try {
+            broadcast(new SeniJuryScoreUpdated(
+                $match,
+                $score,
+                $punishment,
+                $type,
+                $field,
+                $juryNumber
+            ))->toOthers();
+        } catch (\Throwable $e) {
+            \Log::warning('Broadcasting SeniJuryScoreUpdated failed: '.$e->getMessage());
         }
     }
 
