@@ -34,6 +34,8 @@ createInertiaApp({
             case name === 'SeniJury':
             case name === 'FightSecretary':
             case name === 'SeniSecretary':
+            case name === 'SeniStreaming':
+            case name === 'SeniStreamingOnline':
             case name === 'FightStreaming':
             case name === 'FightStreamingOnline':
             case name === 'Timer':

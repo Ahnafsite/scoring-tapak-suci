@@ -21,6 +21,8 @@ import {
     seniSecretary,
     fightStreaming,
     fightStreamingOnline,
+    seniStreaming,
+    seniStreamingOnline,
     fightJury,
     seniJury,
     timer,
@@ -118,23 +120,44 @@ const handleLogout = () => {
                 v-else-if="page.props.auth?.user?.role?.name === 'Streamer'"
             >
                 <div class="flex flex-col gap-4">
-                    <Link :href="fightStreaming().url">
-                        <Button
-                            size="lg"
-                            class="w-full rounded-xl px-8 py-6 text-lg font-semibold"
-                        >
-                            Fight Streaming
-                        </Button>
-                    </Link>
-                    <Link :href="fightStreamingOnline().url">
-                        <Button
-                            size="lg"
-                            variant="secondary"
-                            class="w-full rounded-xl px-8 py-6 text-lg font-semibold"
-                        >
-                            Fight Streaming Online
-                        </Button>
-                    </Link>
+                    <div class="grid grid-cols-2 gap-4">
+                        <Link :href="fightStreaming().url">
+                            <Button
+                                size="lg"
+                                class="w-full rounded-xl px-8 py-6 text-lg font-semibold"
+                            >
+                                Fight Streaming
+                            </Button>
+                        </Link>
+                        <Link :href="fightStreamingOnline().url">
+                            <Button
+                                size="lg"
+                                variant="secondary"
+                                class="w-full rounded-xl px-8 py-6 text-lg font-semibold"
+                            >
+                                Online
+                            </Button>
+                        </Link>
+                    </div>
+                    <div class="grid grid-cols-2 gap-4">
+                        <Link :href="seniStreaming().url">
+                            <Button
+                                size="lg"
+                                class="w-full rounded-xl px-8 py-6 text-lg font-semibold"
+                            >
+                                Seni Streaming
+                            </Button>
+                        </Link>
+                        <Link :href="seniStreamingOnline().url">
+                            <Button
+                                size="lg"
+                                variant="secondary"
+                                class="w-full rounded-xl px-8 py-6 text-lg font-semibold"
+                            >
+                                Online
+                            </Button>
+                        </Link>
+                    </div>
                 </div>
             </template>
             <template v-else-if="page.props.auth?.user?.role?.name === 'Timer'">

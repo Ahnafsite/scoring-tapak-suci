@@ -104,6 +104,55 @@ Route::middleware(['auth', 'verified'])->group(function () {
         ]);
     })->name('seni-secretary');
 
+    Route::get('seni-streaming', function (Request $request) {
+        if ($request->user()->role->name !== 'Streamer') {
+            abort(403, 'Unauthorized access.');
+        }
+
+        $activeMatch = SeniSingleMatch::with(['juryScores', 'juryPunishments'])
+            ->where('is_active', true)
+            ->first();
+        $rankedMatches = SeniSingleMatch::query()
+            ->when(
+                SeniSingleMatch::exists()
+                && SeniSingleMatch::where('status', '!=', 'done')->doesntExist()
+                && SeniSingleMatch::whereNull('rank')->doesntExist(),
+                fn ($query) => $query->orderBy('no_order')->orderBy('atletes'),
+                fn ($query) => $query->whereRaw('1 = 0')
+            )
+            ->get();
+
+        return inertia('SeniStreaming', [
+            'arena' => Arena::first(),
+            'activeMatch' => $activeMatch,
+            'rankedMatches' => $rankedMatches,
+        ]);
+    })->name('seni-streaming');
+
+    Route::get('seni-streaming-online', function (Request $request) {
+        if ($request->user()->role->name !== 'Streamer') {
+            abort(403, 'Unauthorized access.');
+        }
+
+        $activeMatch = SeniSingleMatch::with(['juryScores', 'juryPunishments'])
+            ->where('is_active', true)
+            ->first();
+        $rankedMatches = SeniSingleMatch::query()
+            ->when(
+                SeniSingleMatch::exists()
+                && SeniSingleMatch::where('status', '!=', 'done')->doesntExist(),
+                fn ($query) => $query->orderBy('no_order')->orderBy('atletes'),
+                fn ($query) => $query->whereRaw('1 = 0')
+            )
+            ->get();
+
+        return inertia('SeniStreamingOnline', [
+            'arena' => Arena::first(),
+            'activeMatch' => $activeMatch,
+            'rankedMatches' => $rankedMatches,
+        ]);
+    })->name('seni-streaming-online');
+
     Route::get('fight-streaming', function (Request $request) {
         if ($request->user()->role->name !== 'Streamer') {
             abort(403, 'Unauthorized access.');
