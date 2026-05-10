@@ -48,7 +48,9 @@ Route::middleware(['auth', 'verified'])->group(function () {
             abort(403, 'Unauthorized access.');
         }
 
-        $matches = SeniSingleMatch::orderBy('no_order')->get();
+        $matches = SeniSingleMatch::query()
+            ->orderBy('no_order')
+            ->get();
         $activePool = null;
 
         if ($matches->isNotEmpty()) {
@@ -85,10 +87,20 @@ Route::middleware(['auth', 'verified'])->group(function () {
         $activeMatch = SeniSingleMatch::with(['juryScores', 'juryPunishments'])
             ->where('is_active', true)
             ->first();
+        $rankedMatches = SeniSingleMatch::query()
+            ->when(
+                SeniSingleMatch::exists()
+                && SeniSingleMatch::where('status', '!=', 'done')->doesntExist()
+                && SeniSingleMatch::whereNull('rank')->doesntExist(),
+                fn ($query) => $query->orderBy('no_order')->orderBy('atletes'),
+                fn ($query) => $query->whereRaw('1 = 0')
+            )
+            ->get();
 
         return inertia('SeniSecretary', [
             'arena' => Arena::first(),
             'activeMatch' => $activeMatch,
+            'rankedMatches' => $rankedMatches,
         ]);
     })->name('seni-secretary');
 
@@ -106,6 +118,21 @@ Route::middleware(['auth', 'verified'])->group(function () {
             'timer' => Timer::current()->toBroadcastPayload(),
         ]);
     })->name('fight-streaming');
+
+    Route::get('fight-streaming-online', function (Request $request) {
+        if ($request->user()->role->name !== 'Streamer') {
+            abort(403, 'Unauthorized access.');
+        }
+
+        return inertia('FightStreamingOnline', [
+            'arena' => Arena::first(),
+            'activeMatch' => FightMatch::first(),
+            'recapPoints' => FightRecapJuryPoint::all(),
+            'yellowPoints' => FightDetailJuryPointYellow::with(['score', 'punishment'])->get(),
+            'bluePoints' => FightDetailJuryPointBlue::with(['score', 'punishment'])->get(),
+            'timer' => Timer::current()->toBroadcastPayload(),
+        ]);
+    })->name('fight-streaming-online');
 
     Route::get('fight-jury', function (Request $request) {
         if ($request->user()->role->name !== 'Juri') {
@@ -148,7 +175,11 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::post('/seni/matches/{match}/status', [SeniScoringController::class, 'updateMatchStatus']);
         Route::post('/seni/matches/{match}/jury-score', [SeniScoringController::class, 'storeJuryScore']);
         Route::post('/seni/matches/{match}/save-detail', [SeniScoringController::class, 'saveMatchDetail']);
+        Route::post('/seni/matches/{match}/disqualify', [SeniScoringController::class, 'disqualifyMatch']);
+        Route::post('/seni/matches/{match}/cancel-disqualification', [SeniScoringController::class, 'cancelDisqualification']);
         Route::post('/seni/matches/{match}/reset', [SeniScoringController::class, 'resetMatch']);
+        Route::post('/seni/matches/decide-winners', [SeniScoringController::class, 'decideWinners']);
+        Route::post('/seni/matches/reorder-ranks', [SeniScoringController::class, 'reorderRanks']);
         Route::post('/partai/sync/{partai_id}', [MatchSyncController::class, 'syncMatch']);
         Route::post('/partai/update-status', [MatchSyncController::class, 'updateStatus']);
         Route::post('/partai/update-round', [MatchSyncController::class, 'updateRound']);

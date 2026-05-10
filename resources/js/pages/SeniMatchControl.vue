@@ -1,8 +1,8 @@
 <script setup lang="ts">
 import { Head, router } from '@inertiajs/vue3';
 import axios from 'axios';
-import { RefreshCw } from 'lucide-vue-next';
-import { computed, onMounted, onUnmounted, ref } from 'vue';
+import { GripVertical, RefreshCw } from 'lucide-vue-next';
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
 import { toast } from 'vue-sonner';
 import FightFullscreenButton from '@/components/fight/FightFullscreenButton.vue';
 import FightWaitingState from '@/components/fight/FightWaitingState.vue';
@@ -118,7 +118,9 @@ const isLoading = ref(false);
 const isRefreshing = ref(false);
 const isConfirmDialogOpen = ref(false);
 const isMatchConfirmDialogOpen = ref(false);
+const isDecisionDialogOpen = ref(false);
 const isResetDialogOpen = ref(false);
+const isDisqualificationDialogOpen = ref(false);
 const isTimeDialogOpen = ref(false);
 const isSyncing = ref(false);
 const isActivatingMatch = ref(false);
@@ -126,6 +128,8 @@ const isUpdatingStatus = ref(false);
 const isSavingTime = ref(false);
 const isSavingDetail = ref(false);
 const isResetting = ref(false);
+const isDecidingWinners = ref(false);
+const isDisqualifying = ref(false);
 
 const gelanggangList = ref<any[]>([]);
 const sesiList = ref<any[]>([]);
@@ -133,6 +137,9 @@ const selectedGelanggang = ref('');
 const selectedSesi = ref('');
 const performanceMinute = ref('');
 const performanceSecond = ref('');
+const passedCount = ref(1);
+const decisionMatches = ref<SeniMatch[]>([]);
+const draggedDecisionMatchId = ref<number | null>(null);
 
 const {
     buttonTitle,
@@ -177,6 +184,28 @@ const activeMatch = computed(() => {
     return currentMatches.value.find((match) => match.is_active) ?? null;
 });
 
+const matchOrderValue = (match: SeniMatch) => Number(match.no_order ?? 0);
+
+const sortedByNoOrder = (matches: SeniMatch[]) => {
+    return [...matches].sort((first, second) => {
+        const orderComparison =
+            matchOrderValue(first) - matchOrderValue(second);
+
+        if (orderComparison !== 0) {
+            return orderComparison;
+        }
+
+        return first.id - second.id;
+    });
+};
+
+const setCurrentMatches = (
+    matches: SeniMatch[] | null | undefined,
+    fallback: SeniMatch[] = currentMatches.value,
+) => {
+    currentMatches.value = sortedByNoOrder(matches ?? fallback);
+};
+
 const replaceMatchInCurrentMatches = (updatedMatch: SeniMatch | null) => {
     if (!updatedMatch) {
         return;
@@ -194,11 +223,19 @@ const replaceMatchInCurrentMatches = (updatedMatch: SeniMatch | null) => {
         ...currentMatches.value[index],
         ...updatedMatch,
     });
+    setCurrentMatches(currentMatches.value);
 };
 
 const hasLockedMatch = computed(() => {
     return currentMatches.value.some((match) =>
         ['ongoing', 'paused'].includes(match.status),
+    );
+});
+
+const allMatchesDone = computed(() => {
+    return (
+        currentMatches.value.length > 0 &&
+        currentMatches.value.every((match) => match.status === 'done')
     );
 });
 
@@ -216,7 +253,25 @@ const pendingMatchTitle = computed(() => {
         .join(' - ');
 });
 
-const statusMeta = (status: string | null | undefined) => {
+const statusMeta = (
+    status: string | null | undefined,
+    isDisqualified = false,
+    isPassed = false,
+) => {
+    if (isDisqualified) {
+        return {
+            label: 'Diskualifikasi',
+            class: 'border-red-500/25 bg-red-500/15 text-red-400',
+        };
+    }
+
+    if (isPassed) {
+        return {
+            label: 'Lolos',
+            class: 'border-green-500/25 bg-green-500/15 text-green-400',
+        };
+    }
+
     switch (status) {
         case 'ongoing':
             return {
@@ -225,7 +280,7 @@ const statusMeta = (status: string | null | undefined) => {
             };
         case 'paused':
             return {
-                label: 'Dijeda',
+                label: 'Ditunda',
                 class: 'border-blue-500/25 bg-blue-500/15 text-blue-400',
             };
         case 'done':
@@ -235,10 +290,14 @@ const statusMeta = (status: string | null | undefined) => {
             };
         default:
             return {
-                label: 'Belum Mulai',
+                label: 'Belum Dimulai',
                 class: 'border-red-400/25 bg-red-400/15 text-red-400',
             };
     }
+};
+
+const matchStatusMeta = (match: SeniMatch) => {
+    return statusMeta(match.status, match.is_disqualified, match.is_passed);
 };
 
 const isTechniqueMatch = (match: SeniMatch | null | undefined) => {
@@ -413,7 +472,7 @@ const saveSetup = async () => {
 
         pools.value = response.data?.data ?? [];
         selectedPool.value = null;
-        currentMatches.value = [];
+        setCurrentMatches([]);
         isSetupDialogOpen.value = false;
         router.reload({ only: ['pools', 'arena'] });
         toast.success('Pool seni berhasil dimuat.');
@@ -441,7 +500,7 @@ const refreshPools = async () => {
 
         pools.value = response.data?.data ?? [];
         selectedPool.value = null;
-        currentMatches.value = [];
+        setCurrentMatches([]);
         router.reload({ only: ['pools', 'arena'] });
         toast.success('Pool seni berhasil diperbarui.');
     } catch (e) {
@@ -495,7 +554,7 @@ const syncPoolMatches = async () => {
         );
 
         selectedPool.value = pendingPool.value;
-        currentMatches.value = response.data?.data ?? [];
+        setCurrentMatches(response.data?.data);
         isConfirmDialogOpen.value = false;
         pendingPool.value = null;
         toast.success('Data partai pool berhasil dimuat.');
@@ -541,7 +600,7 @@ const activatePendingMatch = async () => {
         );
 
         selectedPool.value = response.data?.pool ?? selectedPool.value;
-        currentMatches.value = response.data?.matches ?? currentMatches.value;
+        setCurrentMatches(response.data?.matches);
         replaceMatchInCurrentMatches(response.data?.data ?? null);
         isMatchConfirmDialogOpen.value = false;
         pendingMatch.value = null;
@@ -575,7 +634,7 @@ const updateActiveMatchStatus = async (
         );
 
         selectedPool.value = response.data?.pool ?? selectedPool.value;
-        currentMatches.value = response.data?.matches ?? currentMatches.value;
+        setCurrentMatches(response.data?.matches);
         replaceMatchInCurrentMatches(response.data?.data ?? null);
         toast.success('Status partai seni berhasil diperbarui.');
 
@@ -668,7 +727,7 @@ const triggerSave = async () => {
         );
 
         selectedPool.value = response.data?.pool ?? selectedPool.value;
-        currentMatches.value = response.data?.matches ?? currentMatches.value;
+        setCurrentMatches(response.data?.matches);
         toast.success('Detail partai seni berhasil disimpan.');
     } catch (e) {
         console.error('Failed to save seni match detail', e);
@@ -678,8 +737,214 @@ const triggerSave = async () => {
     }
 };
 
+const scoreNumber = (value: string | number | null | undefined) => {
+    if (value === null || value === undefined || value === '') {
+        return 0;
+    }
+
+    const numberValue =
+        typeof value === 'number'
+            ? value
+            : Number(value.trim().replace(/,/g, ''));
+
+    return Number.isFinite(numberValue) ? numberValue : 0;
+};
+
+const rankComparisons = (first: SeniMatch, second: SeniMatch) => {
+    const comparisons: Array<[number, number, 'asc' | 'desc']> = [
+        [first.is_disqualified ? 1 : 0, second.is_disqualified ? 1 : 0, 'asc'],
+        [
+            scoreNumber(first.total_score),
+            scoreNumber(second.total_score),
+            'desc',
+        ],
+    ];
+
+    if (isTechniqueMatch(first) || isTechniqueMatch(second)) {
+        comparisons.push(
+            [
+                scoreNumber(first.total_kualitas_teknik),
+                scoreNumber(second.total_kualitas_teknik),
+                'desc',
+            ],
+            [
+                scoreNumber(first.total_kuantitas_teknik),
+                scoreNumber(second.total_kuantitas_teknik),
+                'desc',
+            ],
+        );
+    } else {
+        comparisons.push(
+            [
+                scoreNumber(first.total_wiraga),
+                scoreNumber(second.total_wiraga),
+                'desc',
+            ],
+            [
+                scoreNumber(first.total_wirasa),
+                scoreNumber(second.total_wirasa),
+                'desc',
+            ],
+        );
+    }
+
+    comparisons.push([
+        scoreNumber(first.total_punishment),
+        scoreNumber(second.total_punishment),
+        'asc',
+    ]);
+
+    return comparisons;
+};
+
+const applyDecisionRanks = (matches: SeniMatch[]) => {
+    const orderedMatches = [
+        ...matches.filter((match) => !match.is_disqualified),
+        ...matches.filter((match) => match.is_disqualified),
+    ];
+    const safePassedCount = Math.min(
+        orderedMatches.length,
+        Math.max(0, Number(passedCount.value) || 0),
+    );
+
+    return orderedMatches.map((match, index) => {
+        const rank = index + 1;
+
+        return {
+            ...match,
+            rank,
+            is_passed: !match.is_disqualified && rank <= safePassedCount,
+        };
+    });
+};
+
+const generatedDecisionMatches = (preferExistingRank = false) => {
+    const allRanked = currentMatches.value.every(
+        (match) => match.rank !== null && match.rank !== undefined,
+    );
+
+    const matches =
+        preferExistingRank && allRanked
+            ? [...currentMatches.value].sort((first, second) => {
+                  const rankComparison =
+                      Number(first.rank ?? 0) - Number(second.rank ?? 0);
+
+                  if (rankComparison !== 0) {
+                      return rankComparison;
+                  }
+
+                  return matchOrderValue(first) - matchOrderValue(second);
+              })
+            : [...currentMatches.value].sort((first, second) => {
+                  for (const [
+                      firstValue,
+                      secondValue,
+                      direction,
+                  ] of rankComparisons(first, second)) {
+                      const comparison =
+                          direction === 'asc'
+                              ? firstValue - secondValue
+                              : secondValue - firstValue;
+
+                      if (comparison !== 0) {
+                          return comparison;
+                      }
+                  }
+
+                  return (first.atletes ?? '')
+                      .toLowerCase()
+                      .localeCompare((second.atletes ?? '').toLowerCase());
+              });
+
+    return applyDecisionRanks(matches);
+};
+
+const openDecisionDialog = () => {
+    passedCount.value = Math.max(
+        1,
+        currentMatches.value.filter((match) => match.is_passed).length || 1,
+    );
+    decisionMatches.value = generatedDecisionMatches(true);
+    isDecisionDialogOpen.value = true;
+};
+
+watch(passedCount, () => {
+    if (!isDecisionDialogOpen.value) {
+        return;
+    }
+
+    decisionMatches.value = applyDecisionRanks(decisionMatches.value);
+});
+
+const decideWinners = async () => {
+    isDecidingWinners.value = true;
+
+    try {
+        const response = await axios.post('/api/seni/matches/reorder-ranks', {
+            ordered_match_ids: decisionMatches.value.map((match) => match.id),
+            passed_count: Math.max(0, Number(passedCount.value) || 0),
+        });
+
+        selectedPool.value = response.data?.pool ?? selectedPool.value;
+        setCurrentMatches(response.data?.matches ?? response.data?.data);
+        isDecisionDialogOpen.value = false;
+        toast.success('Keputusan pemenang seni berhasil dibuat.');
+    } catch (e) {
+        console.error('Failed to decide seni winners', e);
+        toast.error('Gagal membuat keputusan pemenang seni.');
+    } finally {
+        isDecidingWinners.value = false;
+    }
+};
+
 const triggerReset = () => {
     isResetDialogOpen.value = true;
+};
+
+const triggerDisqualification = () => {
+    if (!activeMatch.value) {
+        toast.error('Pilih partai aktif terlebih dahulu.');
+
+        return;
+    }
+
+    isDisqualificationDialogOpen.value = true;
+};
+
+const confirmDisqualification = async () => {
+    if (!activeMatch.value) {
+        return;
+    }
+
+    const isCancelling = activeMatch.value.is_disqualified;
+    isDisqualifying.value = true;
+
+    try {
+        const response = await axios.post(
+            `/api/seni/matches/${activeMatch.value.id}/${
+                isCancelling ? 'cancel-disqualification' : 'disqualify'
+            }`,
+        );
+
+        selectedPool.value = response.data?.pool ?? selectedPool.value;
+        setCurrentMatches(response.data?.matches);
+        replaceMatchInCurrentMatches(response.data?.data ?? null);
+        isDisqualificationDialogOpen.value = false;
+        toast.success(
+            isCancelling
+                ? 'Diskualifikasi partai seni berhasil dibatalkan.'
+                : 'Partai seni berhasil didiskualifikasi.',
+        );
+    } catch (e) {
+        console.error('Failed to disqualify seni match', e);
+        toast.error(
+            isCancelling
+                ? 'Gagal membatalkan diskualifikasi.'
+                : 'Gagal menyimpan diskualifikasi.',
+        );
+    } finally {
+        isDisqualifying.value = false;
+    }
 };
 
 const confirmReset = async () => {
@@ -695,7 +960,7 @@ const confirmReset = async () => {
         );
 
         selectedPool.value = response.data?.pool ?? selectedPool.value;
-        currentMatches.value = response.data?.matches ?? currentMatches.value;
+        setCurrentMatches(response.data?.matches);
         isResetDialogOpen.value = false;
         toast.success('Partai seni berhasil direset.');
     } catch (e) {
@@ -704,6 +969,59 @@ const confirmReset = async () => {
     } finally {
         isResetting.value = false;
     }
+};
+
+const moveMatch = (
+    matches: SeniMatch[],
+    sourceId: number,
+    targetId: number,
+) => {
+    const nextMatches = [...matches];
+    const sourceIndex = nextMatches.findIndex((match) => match.id === sourceId);
+    const targetIndex = nextMatches.findIndex((match) => match.id === targetId);
+
+    if (sourceIndex === -1 || targetIndex === -1) {
+        return matches;
+    }
+
+    const [movedMatch] = nextMatches.splice(sourceIndex, 1);
+    nextMatches.splice(targetIndex, 0, movedMatch);
+
+    return nextMatches;
+};
+
+const persistRankOrder = async (matches: SeniMatch[]) => {
+    decisionMatches.value = applyDecisionRanks(matches);
+};
+
+const startRankDrag = (match: SeniMatch, event: DragEvent) => {
+    if (isDecidingWinners.value) {
+        return;
+    }
+
+    draggedDecisionMatchId.value = match.id;
+    event.dataTransfer?.setData('text/plain', match.id.toString());
+    event.dataTransfer?.setDragImage?.(event.currentTarget as Element, 12, 12);
+};
+
+const dropRank = async (match: SeniMatch) => {
+    if (!draggedDecisionMatchId.value) {
+        return;
+    }
+
+    const sourceId = draggedDecisionMatchId.value;
+    draggedDecisionMatchId.value = null;
+
+    if (sourceId === match.id) {
+        return;
+    }
+
+    const reorderedMatches = moveMatch(
+        decisionMatches.value,
+        sourceId,
+        match.id,
+    );
+    await persistRankOrder(reorderedMatches);
 };
 
 const formatTimerPart = (value: string | number | null | undefined) => {
@@ -964,9 +1282,9 @@ onUnmounted(() => {
                     <div
                         class="grid min-h-0 flex-1 grid-cols-[320px_minmax(0,1fr)] gap-6 overflow-hidden p-6"
                     >
-                        <div class="min-h-0">
+                        <div class="flex min-h-0 flex-col gap-4">
                             <Card
-                                class="flex h-full flex-col gap-0 overflow-hidden border-stone-800 bg-zinc-900 py-0 shadow-lg"
+                                class="flex min-h-0 flex-1 flex-col gap-0 overflow-hidden border-stone-800 bg-zinc-900 py-0 shadow-lg"
                             >
                                 <CardHeader
                                     class="border-b border-stone-800 bg-black/30 px-5 py-4"
@@ -1112,13 +1430,18 @@ onUnmounted(() => {
                                 >
                                     <Badge
                                         :class="[
-                                            'w-full justify-center py-3 text-lg font-black tracking-widest uppercase',
-                                            statusMeta(activeMatch.status)
-                                                .class,
+                                            'text-md w-full justify-center py-3 font-black tracking-widest uppercase',
+                                            statusMeta(
+                                                activeMatch.status,
+                                                activeMatch.is_disqualified,
+                                            ).class,
                                         ]"
                                     >
                                         {{
-                                            statusMeta(activeMatch.status).label
+                                            statusMeta(
+                                                activeMatch.status,
+                                                activeMatch.is_disqualified,
+                                            ).label
                                         }}
                                     </Badge>
                                 </CardFooter>
@@ -1185,7 +1508,7 @@ onUnmounted(() => {
                                                 <th
                                                     class="px-3 py-3 text-right"
                                                 >
-                                                    Wirama
+                                                    Wirasa
                                                 </th>
                                             </template>
                                             <template v-else>
@@ -1205,6 +1528,9 @@ onUnmounted(() => {
                                             </th>
                                             <th class="px-3 py-3 text-right">
                                                 Waktu
+                                            </th>
+                                            <th class="px-3 py-3 text-center">
+                                                Status
                                             </th>
                                         </tr>
                                     </thead>
@@ -1279,7 +1605,7 @@ onUnmounted(() => {
                                                 >
                                                     {{
                                                         scoreValue(
-                                                            match.total_wirama,
+                                                            match.total_wirasa,
                                                         )
                                                     }}
                                                 </td>
@@ -1316,6 +1642,20 @@ onUnmounted(() => {
                                             <td class="px-3 py-3 text-right">
                                                 {{ formatTime(match.time) }}
                                             </td>
+                                            <td class="px-3 py-3 text-center">
+                                                <Badge
+                                                    :class="[
+                                                        'justify-center text-[10px] font-black tracking-wider uppercase',
+                                                        matchStatusMeta(match)
+                                                            .class,
+                                                    ]"
+                                                >
+                                                    {{
+                                                        matchStatusMeta(match)
+                                                            .label
+                                                    }}
+                                                </Badge>
+                                            </td>
                                         </tr>
                                     </tbody>
                                 </table>
@@ -1324,11 +1664,37 @@ onUnmounted(() => {
                     </div>
 
                     <div
-                        class="z-20 flex h-[72px] w-full shrink-0 items-center justify-center border-t border-stone-800 bg-zinc-900 px-6"
+                        class="z-20 flex h-[72px] w-full shrink-0 items-center border-t border-stone-800 bg-zinc-900 px-6"
                     >
+                        <div class="flex flex-1 items-center justify-start">
+                            <Button
+                                v-if="activeMatch"
+                                @click="triggerDisqualification"
+                                variant="destructive"
+                                class="font-bold tracking-wider"
+                                :disabled="isDisqualifying"
+                            >
+                                {{
+                                    isDisqualifying
+                                        ? 'MENYIMPAN...'
+                                        : activeMatch.is_disqualified
+                                          ? 'BATAL DISKUALIFIKASI'
+                                          : 'DISKUALIFIKASI'
+                                }}
+                            </Button>
+                        </div>
+
                         <div
                             class="flex flex-1 items-center justify-center gap-3"
                         >
+                            <Button
+                                v-if="allMatchesDone"
+                                class="bg-green-500 font-bold tracking-wider text-white hover:bg-green-600"
+                                @click="openDecisionDialog"
+                                :disabled="isDecidingWinners"
+                            >
+                                KEPUTUSAN
+                            </Button>
                             <Button
                                 v-if="
                                     activeMatch &&
@@ -1381,6 +1747,8 @@ onUnmounted(() => {
                                 {{ isResetting ? 'RESETTING...' : 'RESET' }}
                             </Button>
                         </div>
+
+                        <div class="flex flex-1 items-center justify-end"></div>
                     </div>
                 </div>
             </template>
@@ -1616,6 +1984,216 @@ onUnmounted(() => {
         </Dialog>
 
         <Dialog
+            :open="isDecisionDialogOpen"
+            @update:open="isDecisionDialogOpen = $event"
+        >
+            <DialogContent
+                class="flex max-h-[90vh] flex-col overflow-hidden sm:max-w-[1180px]"
+            >
+                <DialogHeader class="pb-2">
+                    <DialogTitle class="text-xl font-bold text-primary">
+                        Keputusan Pemenang
+                    </DialogTitle>
+                    <DialogDescription
+                        class="pt-2 text-sm text-muted-foreground"
+                    >
+                        Atur rank dan jumlah peserta yang lolos dari pool ini.
+                    </DialogDescription>
+                </DialogHeader>
+
+                <div class="grid gap-5 overflow-hidden py-3">
+                    <div class="flex flex-col gap-3">
+                        <Label
+                            for="passed-count"
+                            class="text-xs font-bold tracking-wider text-muted-foreground uppercase"
+                        >
+                            Jumlah Lolos
+                        </Label>
+                        <Input
+                            id="passed-count"
+                            v-model.number="passedCount"
+                            type="number"
+                            min="0"
+                            :max="currentMatches.length"
+                            class="h-16 w-28 [appearance:textfield] px-0 text-center !text-3xl leading-none font-black tabular-nums md:!text-3xl [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+                        />
+                    </div>
+
+                    <div
+                        class="custom-scrollbar max-h-[52vh] overflow-auto rounded-md border border-stone-800"
+                    >
+                        <table class="min-w-full border-collapse text-sm">
+                            <thead
+                                class="sticky top-0 z-10 border-b border-stone-800 bg-zinc-900 text-[11px] font-black tracking-wider text-muted-foreground uppercase"
+                            >
+                                <tr>
+                                    <th class="w-12 px-3 py-3"></th>
+                                    <th class="px-3 py-3 text-center">Rank</th>
+                                    <th class="px-3 py-3 text-left">No Urut</th>
+                                    <th class="px-3 py-3 text-left">Partai</th>
+                                    <th class="min-w-44 px-3 py-3 text-left">
+                                        Kontingen
+                                    </th>
+                                    <th class="min-w-56 px-3 py-3 text-left">
+                                        Nama
+                                    </th>
+                                    <th class="px-3 py-3 text-right">Total</th>
+                                    <template v-if="scoringMode === 'tgr'">
+                                        <th class="px-3 py-3 text-right">
+                                            Wiraga
+                                        </th>
+                                        <th class="px-3 py-3 text-right">
+                                            Wirasa
+                                        </th>
+                                        <th class="px-3 py-3 text-right">
+                                            Wirama
+                                        </th>
+                                    </template>
+                                    <template v-else>
+                                        <th class="px-3 py-3 text-right">
+                                            Kualitas Teknik
+                                        </th>
+                                        <th class="px-3 py-3 text-right">
+                                            Kuantitas Teknik
+                                        </th>
+                                    </template>
+                                    <th class="px-3 py-3 text-right">
+                                        Hukuman
+                                    </th>
+                                    <th class="px-3 py-3 text-center">
+                                        Status
+                                    </th>
+                                </tr>
+                            </thead>
+                            <tbody class="divide-y divide-stone-800">
+                                <tr
+                                    v-for="match in decisionMatches"
+                                    :key="match.id"
+                                    draggable="true"
+                                    @dragstart="startRankDrag(match, $event)"
+                                    @dragend="draggedDecisionMatchId = null"
+                                    @dragover.prevent
+                                    @drop.prevent="dropRank(match)"
+                                    :class="[
+                                        'bg-zinc-950/70 text-white transition-colors hover:bg-zinc-900',
+                                        draggedDecisionMatchId === match.id
+                                            ? 'opacity-50'
+                                            : '',
+                                        match.is_passed
+                                            ? 'bg-green-500/10'
+                                            : '',
+                                    ]"
+                                >
+                                    <td class="px-3 py-3 text-center">
+                                        <GripVertical
+                                            class="mx-auto h-4 w-4 cursor-grab text-yellow-400"
+                                        />
+                                    </td>
+                                    <td
+                                        class="px-3 py-3 text-center text-2xl font-black text-yellow-400 tabular-nums"
+                                    >
+                                        {{ scoreValue(match.rank) }}
+                                    </td>
+                                    <td class="px-3 py-3 font-bold">
+                                        {{ displayValue(match.no_order) }}
+                                    </td>
+                                    <td class="px-3 py-3 font-bold">
+                                        {{ displayValue(match.matches_code) }}
+                                    </td>
+                                    <td
+                                        class="px-3 py-3 font-semibold uppercase"
+                                    >
+                                        {{ displayValue(match.contingent) }}
+                                    </td>
+                                    <td class="px-3 py-3 uppercase">
+                                        {{ displayValue(match.atletes) }}
+                                    </td>
+                                    <td
+                                        class="px-3 py-3 text-right font-black text-yellow-400"
+                                    >
+                                        {{ scoreValue(match.total_score) }}
+                                    </td>
+                                    <template v-if="scoringMode === 'tgr'">
+                                        <td class="px-3 py-3 text-right">
+                                            {{ scoreValue(match.total_wiraga) }}
+                                        </td>
+                                        <td class="px-3 py-3 text-right">
+                                            {{ scoreValue(match.total_wirasa) }}
+                                        </td>
+                                        <td class="px-3 py-3 text-right">
+                                            {{ scoreValue(match.total_wirama) }}
+                                        </td>
+                                    </template>
+                                    <template v-else>
+                                        <td class="px-3 py-3 text-right">
+                                            {{
+                                                scoreValue(
+                                                    match.total_kualitas_teknik,
+                                                )
+                                            }}
+                                        </td>
+                                        <td class="px-3 py-3 text-right">
+                                            {{
+                                                scoreValue(
+                                                    match.total_kuantitas_teknik,
+                                                )
+                                            }}
+                                        </td>
+                                    </template>
+                                    <td
+                                        class="px-3 py-3 text-right font-black text-red-500"
+                                    >
+                                        {{
+                                            punishmentValue(
+                                                match.total_punishment,
+                                            )
+                                        }}
+                                    </td>
+                                    <td class="px-3 py-3 text-center">
+                                        <Badge
+                                            :class="
+                                                match.is_passed
+                                                    ? 'border-green-500/25 bg-green-500/15 text-green-400'
+                                                    : 'border-stone-700 bg-zinc-950 text-muted-foreground'
+                                            "
+                                        >
+                                            {{
+                                                match.is_passed
+                                                    ? 'Lolos'
+                                                    : 'Tidak Lolos'
+                                            }}
+                                        </Badge>
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <DialogFooter class="pt-2">
+                    <Button
+                        variant="ghost"
+                        @click="isDecisionDialogOpen = false"
+                        :disabled="isDecidingWinners"
+                    >
+                        Batal
+                    </Button>
+                    <Button
+                        class="bg-green-500 font-bold tracking-wider text-white hover:bg-green-600"
+                        @click="decideWinners"
+                        :disabled="isDecidingWinners"
+                    >
+                        <RefreshCw
+                            v-if="isDecidingWinners"
+                            class="mr-2 h-4 w-4 animate-spin"
+                        />
+                        {{ isDecidingWinners ? 'Menyimpan...' : 'Simpan' }}
+                    </Button>
+                </DialogFooter>
+            </DialogContent>
+        </Dialog>
+
+        <Dialog
             :open="isResetDialogOpen"
             @update:open="isResetDialogOpen = $event"
         >
@@ -1650,6 +2228,53 @@ onUnmounted(() => {
                             class="mr-2 h-4 w-4 animate-spin"
                         />
                         {{ isResetting ? 'Mereset...' : 'Ya' }}
+                    </Button>
+                </DialogFooter>
+            </DialogContent>
+        </Dialog>
+
+        <Dialog
+            :open="isDisqualificationDialogOpen"
+            @update:open="isDisqualificationDialogOpen = $event"
+        >
+            <DialogContent class="sm:max-w-[400px]">
+                <DialogHeader class="pb-2">
+                    <DialogTitle class="text-xl font-bold text-primary">
+                        {{
+                            activeMatch?.is_disqualified
+                                ? 'Batalkan Diskualifikasi?'
+                                : 'Diskualifikasi Partai Seni?'
+                        }}
+                    </DialogTitle>
+                    <DialogDescription
+                        class="pt-2 text-sm text-muted-foreground"
+                    >
+                        {{
+                            activeMatch?.is_disqualified
+                                ? 'Status diskualifikasi partai aktif akan dibatalkan dan nilai yang sudah ada tetap dipertahankan.'
+                                : 'Partai aktif akan didiskualifikasi, nilai yang sudah ada tetap dipertahankan, dan status partai diselesaikan.'
+                        }}
+                    </DialogDescription>
+                </DialogHeader>
+
+                <DialogFooter class="pt-2">
+                    <Button
+                        variant="ghost"
+                        @click="isDisqualificationDialogOpen = false"
+                        :disabled="isDisqualifying"
+                    >
+                        Batal
+                    </Button>
+                    <Button
+                        variant="destructive"
+                        @click="confirmDisqualification"
+                        :disabled="isDisqualifying"
+                    >
+                        <RefreshCw
+                            v-if="isDisqualifying"
+                            class="mr-2 h-4 w-4 animate-spin"
+                        />
+                        {{ isDisqualifying ? 'Menyimpan...' : 'Ya' }}
                     </Button>
                 </DialogFooter>
             </DialogContent>

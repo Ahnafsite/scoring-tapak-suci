@@ -21,6 +21,10 @@ class FightStreamingAccessTest extends TestCase
         $response = $this->get(route('fight-streaming'));
 
         $response->assertRedirect(route('login'));
+
+        $response = $this->get(route('fight-streaming-online'));
+
+        $response->assertRedirect(route('login'));
     }
 
     public function test_streamer_can_view_fight_streaming_page(): void
@@ -76,12 +80,68 @@ class FightStreamingAccessTest extends TestCase
             );
     }
 
+    public function test_streamer_can_view_fight_streaming_online_page(): void
+    {
+        $streamer = Role::create(['name' => 'Streamer']);
+        $user = User::factory()->create(['role_id' => $streamer->id]);
+
+        Arena::create([
+            'arena_name' => 'A',
+            'gelanggang_id' => 1,
+            'sesi_tanding_id' => 1,
+        ]);
+
+        FightMatch::create([
+            'match_code' => '002',
+            'group' => 'Putri',
+            'category' => 'Remaja',
+            'status' => 'not_started',
+            'round_number' => 1,
+            'atlete_yellow' => 'Atlet Kuning Online',
+            'atlete_blue' => 'Atlet Biru Online',
+            'contingent_yellow' => 'Kontingen C',
+            'contingent_blue' => 'Kontingen D',
+        ]);
+
+        FightRecapJuryPoint::create([
+            'round_number' => 1,
+            'total_poin_yellow' => 30,
+            'total_poin_blue' => 50,
+            'jury_one_total_poin_yellow' => 30,
+            'jury_one_total_poin_blue' => 50,
+            'jury_one_winner' => 'blue',
+        ]);
+
+        Timer::create([
+            'is_display' => true,
+            'second' => 90,
+        ]);
+
+        $response = $this->actingAs($user)->get(route('fight-streaming-online'));
+
+        $response
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->component('FightStreamingOnline')
+                ->where('activeMatch.match_code', '002')
+                ->where('activeMatch.status', 'not_started')
+                ->where('recapPoints.0.total_poin_blue', 50)
+                ->where('timer.is_display', true)
+                ->has('yellowPoints')
+                ->has('bluePoints')
+            );
+    }
+
     public function test_non_streamers_cannot_view_fight_streaming_page(): void
     {
         $operator = Role::create(['name' => 'Operator']);
         $user = User::factory()->create(['role_id' => $operator->id]);
 
         $response = $this->actingAs($user)->get(route('fight-streaming'));
+
+        $response->assertForbidden();
+
+        $response = $this->actingAs($user)->get(route('fight-streaming-online'));
 
         $response->assertForbidden();
     }

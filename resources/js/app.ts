@@ -35,6 +35,7 @@ createInertiaApp({
             case name === 'FightSecretary':
             case name === 'SeniSecretary':
             case name === 'FightStreaming':
+            case name === 'FightStreamingOnline':
             case name === 'Timer':
                 return null;
             case name.startsWith('auth/'):

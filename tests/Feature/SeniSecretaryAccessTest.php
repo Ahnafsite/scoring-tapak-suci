@@ -92,4 +92,60 @@ class SeniSecretaryAccessTest extends TestCase
             ->get(route('seni-secretary'))
             ->assertForbidden();
     }
+
+    #[Test]
+    public function secretary_receives_ranked_matches_when_all_seni_matches_are_done_and_ranked(): void
+    {
+        $secretary = Role::create(['name' => 'Sekretaris']);
+        $user = User::factory()->create(['role_id' => $secretary->id]);
+
+        SeniSingleMatch::create([
+            'no_pool_babak_id' => 55,
+            'bkp_id' => 3410,
+            'matches_code' => 'S-01',
+            'atletes' => 'Atlet A',
+            'contingent' => 'Kontingen A',
+            'type' => 'tunggal',
+            'category' => 'Tunggal',
+            'group' => 'Putra',
+            'status' => 'done',
+            'is_active' => false,
+            'is_passed' => true,
+            'round_match' => 'Final',
+            'no_order' => 2,
+            'total_score' => 378,
+            'rank' => 1,
+        ]);
+        SeniSingleMatch::create([
+            'no_pool_babak_id' => 55,
+            'bkp_id' => 3411,
+            'matches_code' => 'S-02',
+            'atletes' => 'Atlet B',
+            'contingent' => 'Kontingen B',
+            'type' => 'tunggal',
+            'category' => 'Tunggal',
+            'group' => 'Putra',
+            'status' => 'done',
+            'is_active' => false,
+            'is_passed' => false,
+            'round_match' => 'Final',
+            'no_order' => 1,
+            'total_score' => 360,
+            'rank' => 2,
+        ]);
+
+        $this->actingAs($user)
+            ->get(route('seni-secretary'))
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->component('SeniSecretary')
+                ->has('rankedMatches', 2)
+                ->where('rankedMatches.0.no_order', 1)
+                ->where('rankedMatches.0.rank', 2)
+                ->where('rankedMatches.0.is_passed', false)
+                ->where('rankedMatches.1.no_order', 2)
+                ->where('rankedMatches.1.rank', 1)
+                ->where('rankedMatches.1.is_passed', true)
+            );
+    }
 }

@@ -11,6 +11,7 @@ use App\Models\SeniSingleMatch;
 use Illuminate\Http\Client\Response;
 use Illuminate\Http\Request;
 use Illuminate\Support\Arr;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Validation\Rule;
@@ -301,6 +302,105 @@ class SeniScoringController extends Controller
         ]);
     }
 
+    public function disqualifyMatch(SeniSingleMatch $match)
+    {
+        if (! $match->is_active) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Pilih partai aktif terlebih dahulu.',
+            ], 422);
+        }
+
+        DB::transaction(function () use ($match): void {
+            $match->forceFill([
+                'status' => 'done',
+                'is_disqualified' => true,
+                'is_passed' => false,
+            ])->save();
+        });
+
+        $freshMatch = $this->freshMatchWithSecretaryScores($match);
+        $pool = $this->poolForMatch($freshMatch);
+
+        $detailResponse = $this->saveSeniMatchDetailToSource($freshMatch);
+
+        if (! $detailResponse->successful()) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Partai seni lokal sudah didiskualifikasi, tetapi gagal menyimpan diskualifikasi ke server scoring.',
+                'error' => $detailResponse->json() ?? $detailResponse->body(),
+                'payload' => $this->sourceDetailPayload($freshMatch),
+                'data' => $freshMatch,
+                'matches' => SeniSingleMatch::orderBy('no_order')->get(),
+                'pool' => $pool,
+            ], $detailResponse->status());
+        }
+
+        $this->broadcastSeniUpdate($freshMatch, $pool, 'status_updated');
+
+        $statusResponse = $this->updatePartaiStatusOnSource($freshMatch, 'done');
+
+        if (! $statusResponse->successful()) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Diskualifikasi lokal tersimpan, tetapi gagal mengirim status selesai ke server scoring.',
+                'error' => $statusResponse->json() ?? $statusResponse->body(),
+                'data' => $freshMatch,
+                'matches' => SeniSingleMatch::orderBy('no_order')->get(),
+                'pool' => $pool,
+            ], $statusResponse->status());
+        }
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Partai seni berhasil didiskualifikasi.',
+            'data' => $freshMatch,
+            'matches' => SeniSingleMatch::orderBy('no_order')->get(),
+            'pool' => $pool,
+        ]);
+    }
+
+    public function cancelDisqualification(SeniSingleMatch $match)
+    {
+        if (! $match->is_active) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Pilih partai aktif terlebih dahulu.',
+            ], 422);
+        }
+
+        $match->forceFill([
+            'is_disqualified' => false,
+        ])->save();
+
+        $freshMatch = $this->freshMatchWithSecretaryScores($match);
+        $pool = $this->poolForMatch($freshMatch);
+
+        $detailResponse = $this->saveSeniMatchDetailToSource($freshMatch);
+
+        if (! $detailResponse->successful()) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Pembatalan diskualifikasi lokal sudah tersimpan, tetapi gagal menyimpan ke server scoring.',
+                'error' => $detailResponse->json() ?? $detailResponse->body(),
+                'payload' => $this->sourceDetailPayload($freshMatch),
+                'data' => $freshMatch,
+                'matches' => SeniSingleMatch::orderBy('no_order')->get(),
+                'pool' => $pool,
+            ], $detailResponse->status());
+        }
+
+        $this->broadcastSeniUpdate($freshMatch, $pool, 'status_updated');
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Diskualifikasi partai seni berhasil dibatalkan.',
+            'data' => $freshMatch,
+            'matches' => SeniSingleMatch::orderBy('no_order')->get(),
+            'pool' => $pool,
+        ]);
+    }
+
     public function resetMatch(SeniSingleMatch $match)
     {
         DB::transaction(function () use ($match): void {
@@ -308,6 +408,8 @@ class SeniScoringController extends Controller
             $match->juryPunishments()->delete();
             $match->update([
                 'status' => 'not_started',
+                'is_disqualified' => false,
+                'is_passed' => false,
                 'total_score' => null,
                 'total_wiraga' => null,
                 'total_wirasa' => null,
@@ -459,6 +561,143 @@ class SeniScoringController extends Controller
         ]);
     }
 
+    public function decideWinners(Request $request)
+    {
+        $validated = $request->validate([
+            'passed_count' => ['required', 'integer', 'min:0'],
+        ]);
+
+        $matches = SeniSingleMatch::query()->orderBy('no_order')->get();
+
+        if ($matches->isEmpty()) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Belum ada partai seni untuk diputuskan.',
+            ], 422);
+        }
+
+        if ($matches->contains(fn (SeniSingleMatch $match): bool => $match->status !== 'done')) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Keputusan hanya dapat dibuat setelah semua partai selesai.',
+            ], 422);
+        }
+
+        $passedCount = min((int) $validated['passed_count'], $matches->count());
+        $rankedMatches = $this->rankSeniMatches($matches);
+
+        DB::transaction(function () use ($rankedMatches, $passedCount): void {
+            $rankedMatches->values()->each(function (SeniSingleMatch $match, int $index) use ($passedCount): void {
+                $rank = $index + 1;
+
+                $match->forceFill([
+                    'rank' => $rank,
+                    'is_passed' => ! $match->is_disqualified && $rank <= $passedCount,
+                ])->save();
+            });
+        });
+
+        $matches = $this->rankedSeniMatches();
+        $pool = $this->poolForMatch($matches->first());
+        $this->broadcastSeniUpdate($matches->first(), $pool, 'rank_updated');
+
+        $poolResultResponse = $this->savePoolResultToSource($matches);
+
+        if (! $poolResultResponse->successful()) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Keputusan lokal sudah tersimpan, tetapi gagal menyimpan hasil pool ke server scoring.',
+                'error' => $poolResultResponse->json() ?? $poolResultResponse->body(),
+                'payload' => $this->sourcePoolResultPayload($matches),
+                'data' => $matches,
+                'matches' => $matches,
+                'pool' => $pool,
+            ], $poolResultResponse->status());
+        }
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Keputusan pemenang seni berhasil dibuat.',
+            'data' => $matches,
+            'matches' => $matches,
+            'pool' => $pool,
+        ]);
+    }
+
+    public function reorderRanks(Request $request)
+    {
+        $validated = $request->validate([
+            'ordered_match_ids' => ['required', 'array', 'min:1'],
+            'ordered_match_ids.*' => ['required', 'integer', 'distinct', 'exists:seni_single_matches,id'],
+            'passed_count' => ['sometimes', 'integer', 'min:0'],
+        ]);
+
+        $matches = SeniSingleMatch::query()
+            ->whereIn('id', $validated['ordered_match_ids'])
+            ->get()
+            ->keyBy('id');
+
+        if ($matches->count() !== SeniSingleMatch::count()) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Urutan rank harus berisi semua partai seni.',
+            ], 422);
+        }
+
+        if ($matches->contains(fn (SeniSingleMatch $match): bool => $match->status !== 'done')) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Rank hanya dapat diubah setelah semua partai selesai.',
+            ], 422);
+        }
+
+        $passedCount = array_key_exists('passed_count', $validated)
+            ? min((int) $validated['passed_count'], $matches->count())
+            : SeniSingleMatch::where('is_passed', true)->count();
+
+        $orderedMatches = collect($validated['ordered_match_ids'])
+            ->map(fn (int $matchId): SeniSingleMatch => $matches->get($matchId))
+            ->sortBy(fn (SeniSingleMatch $match): int => $match->is_disqualified ? 1 : 0)
+            ->values();
+
+        DB::transaction(function () use ($orderedMatches, $passedCount): void {
+            $orderedMatches->each(function (SeniSingleMatch $match, int $index) use ($passedCount): void {
+                $rank = $index + 1;
+
+                $match->forceFill([
+                    'rank' => $rank,
+                    'is_passed' => ! $match->is_disqualified && $rank <= $passedCount,
+                ])->save();
+            });
+        });
+
+        $matches = $this->rankedSeniMatches();
+        $pool = $this->poolForMatch($matches->first());
+        $this->broadcastSeniUpdate($matches->first(), $pool, 'rank_updated');
+
+        $poolResultResponse = $this->savePoolResultToSource($matches);
+
+        if (! $poolResultResponse->successful()) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Urutan rank lokal sudah tersimpan, tetapi gagal menyimpan hasil pool ke server scoring.',
+                'error' => $poolResultResponse->json() ?? $poolResultResponse->body(),
+                'payload' => $this->sourcePoolResultPayload($matches),
+                'data' => $matches,
+                'matches' => $matches,
+                'pool' => $pool,
+            ], $poolResultResponse->status());
+        }
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Urutan rank seni berhasil diperbarui.',
+            'data' => $matches,
+            'matches' => $matches,
+            'pool' => $pool,
+        ]);
+    }
+
     private function fetchSeniPools(string $sesiSeniId): ?Response
     {
         $paths = [
@@ -571,6 +810,31 @@ class SeniScoringController extends Controller
             ->post($this->baseUrl().'/partai-seni/detail-partai-seni-ts/'.$match->bkp_id, $this->sourceDetailPayload($match, $isReset));
     }
 
+    private function savePoolResultToSource(Collection $matches): Response
+    {
+        return Http::withHeaders($this->headers())
+            ->post(
+                $this->baseUrl().'/partai-seni/pool-result/'.$matches->first()?->no_pool_babak_id,
+                $this->sourcePoolResultPayload($matches)
+            );
+    }
+
+    /**
+     * @return array<int, array{bkp_id: int, is_passed: bool, rank: int|null}>
+     */
+    private function sourcePoolResultPayload(Collection $matches): array
+    {
+        return $matches
+            ->sortBy('rank')
+            ->values()
+            ->map(fn (SeniSingleMatch $match): array => [
+                'bkp_id' => (int) $match->bkp_id,
+                'is_passed' => (bool) $match->is_passed,
+                'rank' => $match->rank === null ? null : (int) $match->rank,
+            ])
+            ->all();
+    }
+
     /**
      * @return array<string, mixed>
      */
@@ -588,6 +852,7 @@ class SeniScoringController extends Controller
             'rank' => $match->rank,
             'is_passed' => $match->is_passed ? 1 : 0,
             'is_disqualified' => $match->is_disqualified ? 1 : 0,
+            'is_disqualification' => $match->is_disqualified ? 1 : 0,
             'time' => $match->time,
             'total_wiraga' => $match->total_wiraga,
             'total_wirasa' => $match->total_wirasa,
@@ -1022,6 +1287,63 @@ class SeniScoringController extends Controller
         }
 
         $match->forceFill($updates)->save();
+    }
+
+    private function rankedSeniMatches()
+    {
+        return SeniSingleMatch::query()
+            ->orderByRaw('rank is null')
+            ->orderBy('rank')
+            ->orderBy('atletes')
+            ->get();
+    }
+
+    private function rankSeniMatches($matches)
+    {
+        return $matches
+            ->sort(function (SeniSingleMatch $first, SeniSingleMatch $second): int {
+                foreach ($this->rankingComparisons($first, $second) as [$firstValue, $secondValue, $direction]) {
+                    $comparison = $direction === 'asc'
+                        ? $firstValue <=> $secondValue
+                        : $secondValue <=> $firstValue;
+
+                    if ($comparison !== 0) {
+                        return $comparison;
+                    }
+                }
+
+                return str($first->atletes ?? '')->lower()->toString()
+                    <=> str($second->atletes ?? '')->lower()->toString();
+            })
+            ->values();
+    }
+
+    /**
+     * @return array<int, array{0: float, 1: float, 2: string}>
+     */
+    private function rankingComparisons(SeniSingleMatch $first, SeniSingleMatch $second): array
+    {
+        $comparisons = [
+            [(int) $first->is_disqualified, (int) $second->is_disqualified, 'asc'],
+            [$this->rankValue($first, 'total_score'), $this->rankValue($second, 'total_score'), 'desc'],
+        ];
+
+        if ($this->isTechniqueMatch($first) || $this->isTechniqueMatch($second)) {
+            $comparisons[] = [$this->rankValue($first, 'total_kualitas_teknik'), $this->rankValue($second, 'total_kualitas_teknik'), 'desc'];
+            $comparisons[] = [$this->rankValue($first, 'total_kuantitas_teknik'), $this->rankValue($second, 'total_kuantitas_teknik'), 'desc'];
+        } else {
+            $comparisons[] = [$this->rankValue($first, 'total_wiraga'), $this->rankValue($second, 'total_wiraga'), 'desc'];
+            $comparisons[] = [$this->rankValue($first, 'total_wirasa'), $this->rankValue($second, 'total_wirasa'), 'desc'];
+        }
+
+        $comparisons[] = [$this->rankValue($first, 'total_punishment'), $this->rankValue($second, 'total_punishment'), 'asc'];
+
+        return $comparisons;
+    }
+
+    private function rankValue(SeniSingleMatch $match, string $column): float
+    {
+        return (float) ($match->{$column} ?? 0);
     }
 
     /**

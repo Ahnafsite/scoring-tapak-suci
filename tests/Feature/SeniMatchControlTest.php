@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Events\SeniJuryScoreUpdated;
+use App\Events\SeniMatchUpdated;
 use App\Models\Arena;
 use App\Models\Role;
 use App\Models\SeniPool;
@@ -665,6 +666,7 @@ class SeniMatchControlTest extends TestCase
             'category' => 'Tunggal',
             'group' => 'Putra',
             'status' => 'paused',
+            'is_disqualified' => true,
             'is_active' => true,
             'round_match' => 'Final',
             'no_order' => 1,
@@ -805,6 +807,8 @@ class SeniMatchControlTest extends TestCase
             'category' => 'Tunggal',
             'group' => 'Putra',
             'status' => 'paused',
+            'is_disqualified' => true,
+            'is_passed' => true,
             'is_active' => true,
             'round_match' => 'Final',
             'no_order' => 1,
@@ -839,6 +843,7 @@ class SeniMatchControlTest extends TestCase
             ->postJson("/api/seni/matches/{$match->id}/reset")
             ->assertOk()
             ->assertJsonPath('data.status', 'not_started')
+            ->assertJsonPath('data.is_disqualified', false)
             ->assertJsonPath('data.total_score', null)
             ->assertJsonPath('data.time', null);
 
@@ -847,6 +852,8 @@ class SeniMatchControlTest extends TestCase
         $this->assertDatabaseHas('seni_single_matches', [
             'id' => $match->id,
             'status' => 'not_started',
+            'is_disqualified' => false,
+            'is_passed' => false,
             'total_score' => null,
             'total_wiraga' => null,
             'total_wirasa' => null,
@@ -874,6 +881,9 @@ class SeniMatchControlTest extends TestCase
             && $request['waktu_tampil'] === 0
             && $request['rank'] === 0
             && $request['ranking'] === 0
+            && $request['is_passed'] === 0
+            && $request['is_disqualified'] === 0
+            && $request['is_disqualification'] === 0
             && $request['deviasi'] === '0.000'
             && $request['total_wiraga'] === '0.000'
             && $request['total_wirasa'] === '0.000'
@@ -889,6 +899,457 @@ class SeniMatchControlTest extends TestCase
             && $request['tgr_jury_total_scores'] === []);
         Http::assertSent(fn ($request) => str_contains($request->url(), '/partai-seni/partai-status/3410')
             && $request['status'] === 'not_started');
+    }
+
+    public function test_disqualify_match_marks_active_match_done_and_keeps_scores(): void
+    {
+        Event::fake([SeniMatchUpdated::class]);
+        Http::fake([
+            '*/partai-seni/detail-partai-seni-ts/3410' => Http::response([
+                'status' => 'success',
+            ], 200),
+            '*/partai-seni/partai-status/3410' => Http::response([
+                'status' => 'success',
+            ], 200),
+        ]);
+
+        $operator = Role::create(['name' => 'Operator']);
+        $user = User::factory()->create(['role_id' => $operator->id]);
+        SeniPool::create([
+            'no_pool_babak_id' => 55,
+            'round_match' => 'Final',
+            'group' => 'Putra',
+            'category' => 'Tunggal',
+            'no_pool' => 'A',
+        ]);
+        $match = SeniSingleMatch::create($this->seniMatchPayload([
+            'status' => 'paused',
+            'is_active' => true,
+            'total_score' => '378.000',
+            'total_wiraga' => '56.000',
+            'total_wirasa' => '55.000',
+            'total_wirama' => '54.000',
+            'total_punishment' => '1.000',
+            'time' => 140,
+            'rank' => 1,
+        ]));
+        $match->juryScores()->create([
+            'jury_number' => 1,
+            'wiraga' => 56,
+            'total_score' => 56,
+            'is_accepted' => true,
+        ]);
+        $match->juryPunishments()->create([
+            'jury_number' => 1,
+            'waktu' => 1,
+            'keluar_garis' => 1,
+        ]);
+
+        $this
+            ->actingAs($user)
+            ->postJson("/api/seni/matches/{$match->id}/disqualify")
+            ->assertOk()
+            ->assertJsonPath('data.status', 'done')
+            ->assertJsonPath('data.is_disqualified', true)
+            ->assertJsonPath('data.total_score', '378.000')
+            ->assertJsonPath('data.time', 140);
+
+        $this->assertDatabaseCount('seni_jury_scores', 1);
+        $this->assertDatabaseCount('seni_jury_punishments', 1);
+        $this->assertDatabaseHas('seni_single_matches', [
+            'id' => $match->id,
+            'status' => 'done',
+            'is_disqualified' => true,
+            'is_passed' => false,
+            'total_score' => '378.000',
+            'total_wiraga' => '56.000',
+            'total_wirasa' => '55.000',
+            'total_wirama' => '54.000',
+            'total_punishment' => '1.000',
+            'time' => 140,
+            'rank' => 1,
+        ]);
+
+        Http::assertSent(fn ($request) => str_contains($request->url(), '/partai-seni/detail-partai-seni-ts/3410')
+            && ! isset($request['reset_scores'])
+            && $request['total_score'] === '378.000'
+            && $request['total_punishment'] === '1.000'
+            && $request['is_disqualified'] === 1
+            && $request['is_disqualification'] === 1
+            && $request['is_passed'] === 0
+            && $request['time'] === 140
+            && $request['total_wiraga'] === '56.000'
+            && $request['total_wirasa'] === '55.000'
+            && $request['total_wirama'] === '54.000'
+            && $request['tgr_jury_scores'] !== []
+            && $request['tgr_jury_punishments'] !== []
+            && $request['tgr_jury_total_scores'] !== []);
+        Http::assertSent(fn ($request) => str_contains($request->url(), '/partai-seni/partai-status/3410')
+            && $request['status'] === 'done');
+        Event::assertDispatched(SeniMatchUpdated::class);
+    }
+
+    public function test_cancel_disqualification_keeps_scores_and_saves_to_source(): void
+    {
+        Event::fake([SeniMatchUpdated::class]);
+        Http::fake([
+            '*/partai-seni/detail-partai-seni-ts/3410' => Http::response([
+                'status' => 'success',
+            ], 200),
+        ]);
+
+        $operator = Role::create(['name' => 'Operator']);
+        $user = User::factory()->create(['role_id' => $operator->id]);
+        SeniPool::create([
+            'no_pool_babak_id' => 55,
+            'round_match' => 'Final',
+            'group' => 'Putra',
+            'category' => 'Tunggal',
+            'no_pool' => 'A',
+        ]);
+        $match = SeniSingleMatch::create($this->seniMatchPayload([
+            'status' => 'done',
+            'is_active' => true,
+            'is_disqualified' => true,
+            'total_score' => '378.000',
+            'total_wiraga' => '56.000',
+            'total_wirasa' => '55.000',
+            'total_wirama' => '54.000',
+            'total_punishment' => '1.000',
+            'time' => 140,
+            'rank' => 1,
+        ]));
+        $match->juryScores()->create([
+            'jury_number' => 1,
+            'wiraga' => 56,
+            'total_score' => 56,
+            'is_accepted' => true,
+        ]);
+
+        $this
+            ->actingAs($user)
+            ->postJson("/api/seni/matches/{$match->id}/cancel-disqualification")
+            ->assertOk()
+            ->assertJsonPath('data.status', 'done')
+            ->assertJsonPath('data.is_disqualified', false)
+            ->assertJsonPath('data.total_score', '378.000');
+
+        $this->assertDatabaseCount('seni_jury_scores', 1);
+        $this->assertDatabaseHas('seni_single_matches', [
+            'id' => $match->id,
+            'status' => 'done',
+            'is_disqualified' => false,
+            'total_score' => '378.000',
+            'time' => 140,
+        ]);
+
+        Http::assertSent(fn ($request) => str_contains($request->url(), '/partai-seni/detail-partai-seni-ts/3410')
+            && $request['total_score'] === '378.000'
+            && $request['is_disqualified'] === 0
+            && $request['is_disqualification'] === 0
+            && $request['time'] === 140
+            && $request['tgr_jury_scores'] !== []);
+        Event::assertDispatched(SeniMatchUpdated::class);
+    }
+
+    public function test_decide_winners_ranks_tgr_matches_with_tie_breakers(): void
+    {
+        Event::fake([SeniMatchUpdated::class]);
+        Http::fake([
+            '*/partai-seni/pool-result/55' => Http::response([
+                'status' => 'success',
+                'message' => 'Pool results processed',
+            ], 200),
+        ]);
+
+        $operator = Role::create(['name' => 'Operator']);
+        $user = User::factory()->create(['role_id' => $operator->id]);
+
+        SeniPool::create([
+            'no_pool_babak_id' => 55,
+            'round_match' => 'Final',
+            'group' => 'Putra',
+            'category' => 'Tunggal',
+            'no_pool' => 'A',
+        ]);
+
+        $matchA = SeniSingleMatch::create($this->seniMatchPayload([
+            'atletes' => 'Bima',
+            'total_score' => 100,
+            'total_wiraga' => 60,
+            'total_wirasa' => 20,
+            'total_punishment' => 0,
+            'no_order' => 1,
+        ]));
+        $matchB = SeniSingleMatch::create($this->seniMatchPayload([
+            'atletes' => 'Ardi',
+            'total_score' => 100,
+            'total_wiraga' => 60,
+            'total_wirasa' => 30,
+            'total_punishment' => 2,
+            'no_order' => 2,
+            'bkp_id' => 3411,
+            'matches_code' => '136',
+        ]));
+        $matchC = SeniSingleMatch::create($this->seniMatchPayload([
+            'atletes' => 'Candra',
+            'total_score' => 110,
+            'total_wiraga' => 40,
+            'total_wirasa' => 10,
+            'total_punishment' => 5,
+            'no_order' => 3,
+            'bkp_id' => 3412,
+            'matches_code' => '137',
+        ]));
+        $matchD = SeniSingleMatch::create($this->seniMatchPayload([
+            'atletes' => 'Dani',
+            'total_score' => 90,
+            'total_wiraga' => 70,
+            'total_wirasa' => 40,
+            'total_punishment' => 0,
+            'no_order' => 4,
+            'bkp_id' => 3413,
+            'matches_code' => '138',
+        ]));
+
+        $this
+            ->actingAs($user)
+            ->postJson('/api/seni/matches/decide-winners', [
+                'passed_count' => 2,
+            ])
+            ->assertOk()
+            ->assertJsonPath('matches.0.id', $matchC->id)
+            ->assertJsonPath('matches.1.id', $matchB->id)
+            ->assertJsonPath('matches.2.id', $matchA->id)
+            ->assertJsonPath('matches.3.id', $matchD->id);
+
+        $this->assertDatabaseHas('seni_single_matches', [
+            'id' => $matchC->id,
+            'rank' => 1,
+            'is_passed' => true,
+        ]);
+        $this->assertDatabaseHas('seni_single_matches', [
+            'id' => $matchB->id,
+            'rank' => 2,
+            'is_passed' => true,
+        ]);
+        $this->assertDatabaseHas('seni_single_matches', [
+            'id' => $matchA->id,
+            'rank' => 3,
+            'is_passed' => false,
+        ]);
+
+        Http::assertSent(function ($request): bool {
+            $payload = $request->data();
+
+            return str_contains($request->url(), '/partai-seni/pool-result/55')
+                && $payload[0] === ['bkp_id' => 3412, 'is_passed' => true, 'rank' => 1]
+                && $payload[1] === ['bkp_id' => 3411, 'is_passed' => true, 'rank' => 2]
+                && $payload[2] === ['bkp_id' => 3410, 'is_passed' => false, 'rank' => 3]
+                && ! array_key_exists('total_kebenaran_gerak', $payload[0]);
+        });
+        Event::assertDispatched(SeniMatchUpdated::class);
+    }
+
+    public function test_decide_winners_places_disqualified_matches_last(): void
+    {
+        Event::fake([SeniMatchUpdated::class]);
+        Http::fake([
+            '*/partai-seni/pool-result/55' => Http::response([
+                'status' => 'success',
+                'message' => 'Pool results processed',
+            ], 200),
+        ]);
+
+        $operator = Role::create(['name' => 'Operator']);
+        $user = User::factory()->create(['role_id' => $operator->id]);
+
+        $matchA = SeniSingleMatch::create($this->seniMatchPayload([
+            'atletes' => 'Atlet A',
+            'total_score' => 100,
+            'no_order' => 1,
+        ]));
+        $matchB = SeniSingleMatch::create($this->seniMatchPayload([
+            'atletes' => 'Atlet B',
+            'total_score' => 90,
+            'no_order' => 2,
+            'bkp_id' => 3411,
+            'matches_code' => '136',
+        ]));
+        $matchC = SeniSingleMatch::create($this->seniMatchPayload([
+            'atletes' => 'Atlet C',
+            'total_score' => 999,
+            'is_disqualified' => true,
+            'no_order' => 3,
+            'bkp_id' => 3412,
+            'matches_code' => '137',
+        ]));
+
+        $this
+            ->actingAs($user)
+            ->postJson('/api/seni/matches/decide-winners', [
+                'passed_count' => 2,
+            ])
+            ->assertOk()
+            ->assertJsonPath('matches.0.id', $matchA->id)
+            ->assertJsonPath('matches.1.id', $matchB->id)
+            ->assertJsonPath('matches.2.id', $matchC->id);
+
+        $this->assertDatabaseHas('seni_single_matches', [
+            'id' => $matchC->id,
+            'rank' => 3,
+            'is_passed' => false,
+        ]);
+
+        Http::assertSent(function ($request): bool {
+            $payload = $request->data();
+
+            return str_contains($request->url(), '/partai-seni/pool-result/55')
+                && $payload[0] === ['bkp_id' => 3410, 'is_passed' => true, 'rank' => 1]
+                && $payload[1] === ['bkp_id' => 3411, 'is_passed' => true, 'rank' => 2]
+                && $payload[2] === ['bkp_id' => 3412, 'is_passed' => false, 'rank' => 3];
+        });
+        Event::assertDispatched(SeniMatchUpdated::class);
+    }
+
+    public function test_reorder_ranks_updates_rank_and_passed_from_manual_order(): void
+    {
+        Event::fake([SeniMatchUpdated::class]);
+        Http::fake([
+            '*/partai-seni/pool-result/55' => Http::response([
+                'status' => 'success',
+                'message' => 'Pool results processed',
+            ], 200),
+        ]);
+
+        $operator = Role::create(['name' => 'Operator']);
+        $user = User::factory()->create(['role_id' => $operator->id]);
+
+        $matchA = SeniSingleMatch::create($this->seniMatchPayload([
+            'atletes' => 'Atlet A',
+            'rank' => 1,
+            'is_passed' => true,
+            'no_order' => 1,
+        ]));
+        $matchB = SeniSingleMatch::create($this->seniMatchPayload([
+            'atletes' => 'Atlet B',
+            'rank' => 2,
+            'is_passed' => true,
+            'no_order' => 2,
+            'bkp_id' => 3411,
+            'matches_code' => '136',
+        ]));
+        $matchC = SeniSingleMatch::create($this->seniMatchPayload([
+            'atletes' => 'Atlet C',
+            'rank' => 3,
+            'is_passed' => false,
+            'no_order' => 3,
+            'bkp_id' => 3412,
+            'matches_code' => '137',
+        ]));
+
+        $this
+            ->actingAs($user)
+            ->postJson('/api/seni/matches/reorder-ranks', [
+                'ordered_match_ids' => [$matchC->id, $matchA->id, $matchB->id],
+                'passed_count' => 1,
+            ])
+            ->assertOk()
+            ->assertJsonPath('matches.0.id', $matchC->id)
+            ->assertJsonPath('matches.1.id', $matchA->id)
+            ->assertJsonPath('matches.2.id', $matchB->id);
+
+        $this->assertDatabaseHas('seni_single_matches', [
+            'id' => $matchC->id,
+            'rank' => 1,
+            'is_passed' => true,
+        ]);
+        $this->assertDatabaseHas('seni_single_matches', [
+            'id' => $matchA->id,
+            'rank' => 2,
+            'is_passed' => false,
+        ]);
+        $this->assertDatabaseHas('seni_single_matches', [
+            'id' => $matchB->id,
+            'rank' => 3,
+            'is_passed' => false,
+        ]);
+
+        Http::assertSent(function ($request): bool {
+            $payload = $request->data();
+
+            return str_contains($request->url(), '/partai-seni/pool-result/55')
+                && $payload[0] === ['bkp_id' => 3412, 'is_passed' => true, 'rank' => 1]
+                && $payload[1] === ['bkp_id' => 3410, 'is_passed' => false, 'rank' => 2]
+                && $payload[2] === ['bkp_id' => 3411, 'is_passed' => false, 'rank' => 3]
+                && ! array_key_exists('total_kebenaran_gerak', $payload[0]);
+        });
+        Event::assertDispatched(SeniMatchUpdated::class);
+    }
+
+    public function test_reorder_ranks_keeps_disqualified_matches_last(): void
+    {
+        Event::fake([SeniMatchUpdated::class]);
+        Http::fake([
+            '*/partai-seni/pool-result/55' => Http::response([
+                'status' => 'success',
+                'message' => 'Pool results processed',
+            ], 200),
+        ]);
+
+        $operator = Role::create(['name' => 'Operator']);
+        $user = User::factory()->create(['role_id' => $operator->id]);
+
+        $matchA = SeniSingleMatch::create($this->seniMatchPayload([
+            'atletes' => 'Atlet A',
+            'rank' => 1,
+            'is_passed' => true,
+            'no_order' => 1,
+        ]));
+        $matchB = SeniSingleMatch::create($this->seniMatchPayload([
+            'atletes' => 'Atlet B',
+            'rank' => 2,
+            'is_passed' => true,
+            'no_order' => 2,
+            'bkp_id' => 3411,
+            'matches_code' => '136',
+        ]));
+        $matchC = SeniSingleMatch::create($this->seniMatchPayload([
+            'atletes' => 'Atlet C',
+            'rank' => 3,
+            'is_disqualified' => true,
+            'is_passed' => false,
+            'no_order' => 3,
+            'bkp_id' => 3412,
+            'matches_code' => '137',
+        ]));
+
+        $this
+            ->actingAs($user)
+            ->postJson('/api/seni/matches/reorder-ranks', [
+                'ordered_match_ids' => [$matchC->id, $matchA->id, $matchB->id],
+                'passed_count' => 2,
+            ])
+            ->assertOk()
+            ->assertJsonPath('matches.0.id', $matchA->id)
+            ->assertJsonPath('matches.1.id', $matchB->id)
+            ->assertJsonPath('matches.2.id', $matchC->id);
+
+        $this->assertDatabaseHas('seni_single_matches', [
+            'id' => $matchC->id,
+            'rank' => 3,
+            'is_passed' => false,
+        ]);
+
+        Http::assertSent(function ($request): bool {
+            $payload = $request->data();
+
+            return str_contains($request->url(), '/partai-seni/pool-result/55')
+                && $payload[0] === ['bkp_id' => 3410, 'is_passed' => true, 'rank' => 1]
+                && $payload[1] === ['bkp_id' => 3411, 'is_passed' => true, 'rank' => 2]
+                && $payload[2] === ['bkp_id' => 3412, 'is_passed' => false, 'rank' => 3];
+        });
+        Event::assertDispatched(SeniMatchUpdated::class);
     }
 
     public function test_jury_can_save_seni_score_and_punishment_for_ongoing_match(): void
@@ -1193,5 +1654,27 @@ class SeniMatchControlTest extends TestCase
             'total_musik' => '30.000',
             'total_punishment' => '6.000',
         ]);
+    }
+
+    /**
+     * @param  array<string, mixed>  $overrides
+     * @return array<string, mixed>
+     */
+    private function seniMatchPayload(array $overrides = []): array
+    {
+        return array_merge([
+            'no_pool_babak_id' => 55,
+            'bkp_id' => 3410,
+            'matches_code' => '135',
+            'atletes' => 'Atlet A',
+            'contingent' => 'Kontingen A',
+            'type' => 'tunggal',
+            'category' => 'Tunggal',
+            'group' => 'Putra',
+            'status' => 'done',
+            'is_active' => false,
+            'round_match' => 'Final',
+            'no_order' => 1,
+        ], $overrides);
     }
 }

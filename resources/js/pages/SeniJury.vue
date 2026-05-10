@@ -75,6 +75,7 @@ const userName = computed(() => page.props.auth?.user?.name || 'Juri 1');
 const currentMatch = ref<SeniMatch | null>(props.activeMatch ?? null);
 const selectedScoreKey = ref<ScoreKey>('wiraga');
 const isSavingScore = ref(false);
+const isReloadingScoreState = ref(false);
 
 const {
     buttonTitle,
@@ -161,7 +162,11 @@ const juryLabel = computed(() => {
 });
 
 const isLoading = computed(() => {
-    return !currentMatch.value || currentMatch.value.status !== 'ongoing';
+    return (
+        isReloadingScoreState.value ||
+        !currentMatch.value ||
+        currentMatch.value.status !== 'ongoing'
+    );
 });
 
 const isTechniqueMatch = (match: SeniMatch | null | undefined) => {
@@ -378,7 +383,10 @@ const punishmentCountFromValue = (
     return Math.round(numericValue / criterion.amount);
 };
 
-const resetDraftFromMatch = (match: SeniMatch | null) => {
+const resetDraftFromMatch = (
+    match: SeniMatch | null,
+    options: { resetSelectedCriterion?: boolean } = {},
+) => {
     for (const criterion of scoreCriteria.value) {
         scoreDraft[criterion.key] = criterion.min;
     }
@@ -403,6 +411,7 @@ const resetDraftFromMatch = (match: SeniMatch | null) => {
     }
 
     if (
+        options.resetSelectedCriterion ||
         !scoreCriteria.value.some(
             (criterion) => criterion.key === selectedScoreKey.value,
         )
@@ -433,9 +442,25 @@ const shouldReloadScoreStateFromDatabase = (
     );
 };
 
-const reloadScoreStateFromDatabase = () => {
+const reloadScoreStateFromDatabase = (
+    options: { resetSelectedCriterion?: boolean } = {},
+) => {
+    isReloadingScoreState.value = true;
+
     router.reload({
         only: ['activeMatch'],
+        onSuccess: (page: any) => {
+            const activeMatch = (page.props.activeMatch ??
+                null) as SeniMatch | null;
+
+            currentMatch.value = activeMatch;
+            resetDraftFromMatch(activeMatch, {
+                resetSelectedCriterion: options.resetSelectedCriterion,
+            });
+        },
+        onFinish: () => {
+            isReloadingScoreState.value = false;
+        },
     });
 };
 
@@ -454,7 +479,29 @@ watch(
         currentMatch.value?.status,
         juryNumber.value,
     ],
-    () => resetDraftFromMatch(currentMatch.value),
+    (currentValues, previousValues) => {
+        const [matchId, matchType, matchStatus, currentJuryNumber] =
+            currentValues;
+        const [
+            previousMatchId,
+            previousMatchType,
+            previousMatchStatus,
+            previousJuryNumber,
+        ] = previousValues ?? [];
+        const isNewMatch = matchId !== previousMatchId;
+        const isDifferentMatchType = matchType !== previousMatchType;
+        const isDifferentJury = currentJuryNumber !== previousJuryNumber;
+        const isStartingMatch =
+            previousMatchStatus === 'not_started' && matchStatus === 'ongoing';
+
+        resetDraftFromMatch(currentMatch.value, {
+            resetSelectedCriterion:
+                isNewMatch ||
+                isDifferentMatchType ||
+                isDifferentJury ||
+                isStartingMatch,
+        });
+    },
     { immediate: true },
 );
 
@@ -472,11 +519,15 @@ onMounted(() => {
                         event.match,
                     );
 
-                    currentMatch.value = event.match;
-
                     if (shouldReload) {
-                        reloadScoreStateFromDatabase();
+                        reloadScoreStateFromDatabase({
+                            resetSelectedCriterion: true,
+                        });
+
+                        return;
                     }
+
+                    currentMatch.value = event.match;
                 }
             });
     }
@@ -569,7 +620,7 @@ onUnmounted(() => {
                             </h1>
                         </div>
                         <p
-                            class="mt-1 py-1 text-[18px] font-bold uppercase text-black"
+                            class="mt-1 py-1 text-[18px] font-bold text-black uppercase"
                         >
                             {{ currentMatch?.contingent ?? '-' }}
                         </p>
@@ -612,14 +663,24 @@ onUnmounted(() => {
                         </div>
 
                         <aside
-                            class="rounded-md border border-stone-800 bg-zinc-900 p-3 shadow-lg"
+                            class="h-full rounded-md border border-stone-800 bg-zinc-900 p-2.5 shadow-lg"
                         >
-                            <div class="grid gap-2">
+                            <div
+                                :class="[
+                                    'grid',
+                                    scoreCriteria.length > 3
+                                        ? 'h-full grid-rows-6 gap-1.5'
+                                        : 'gap-2',
+                                ]"
+                            >
                                 <label
                                     v-for="criterion in scoreCriteria"
                                     :key="criterion.key"
                                     :class="[
-                                        'flex cursor-pointer items-center gap-3 rounded-md border px-3 py-2.5 transition',
+                                        'flex min-h-0 cursor-pointer items-center gap-2 rounded-md border px-2.5 transition',
+                                        scoreCriteria.length > 3
+                                            ? 'py-1.5'
+                                            : 'py-2.5',
                                         selectedScoreKey === criterion.key
                                             ? 'border-yellow-400 bg-yellow-400 text-black shadow-[0_0_18px_rgba(250,204,21,0.18)]'
                                             : 'border-stone-800 bg-zinc-950 text-white hover:border-yellow-400/50',
@@ -634,19 +695,34 @@ onUnmounted(() => {
                                     />
                                     <span class="min-w-0 flex-1">
                                         <span
-                                            class="block text-xs font-black uppercase"
+                                            :class="[
+                                                'block font-black leading-tight uppercase',
+                                                scoreCriteria.length > 3
+                                                    ? 'text-[11px]'
+                                                    : 'text-xs',
+                                            ]"
                                         >
                                             {{ criterion.label }}
                                         </span>
                                         <span
-                                            class="mt-0.5 block text-[10px] font-bold tracking-[0.16em] uppercase opacity-70"
+                                            :class="[
+                                                'mt-0.5 block font-bold leading-none tracking-[0.12em] uppercase opacity-70',
+                                                scoreCriteria.length > 3
+                                                    ? 'text-[9px]'
+                                                    : 'text-[10px]',
+                                            ]"
                                         >
                                             {{ criterion.min }} -
                                             {{ criterion.max }}
                                         </span>
                                     </span>
                                     <span
-                                        class="text-xl font-black tabular-nums"
+                                        :class="[
+                                            'font-black leading-none tabular-nums',
+                                            scoreCriteria.length > 3
+                                                ? 'text-lg'
+                                                : 'text-xl',
+                                        ]"
                                     >
                                         {{ scoreDraft[criterion.key] }}
                                     </span>

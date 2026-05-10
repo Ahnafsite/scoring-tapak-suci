@@ -20,6 +20,7 @@ import {
     fightSecretary,
     seniSecretary,
     fightStreaming,
+    fightStreamingOnline,
     fightJury,
     seniJury,
     timer,
@@ -116,14 +117,25 @@ const handleLogout = () => {
             <template
                 v-else-if="page.props.auth?.user?.role?.name === 'Streamer'"
             >
-                <Link :href="fightStreaming().url">
-                    <Button
-                        size="lg"
-                        class="rounded-xl px-8 py-6 text-lg font-semibold"
-                    >
-                        Fight Streaming
-                    </Button>
-                </Link>
+                <div class="flex flex-col gap-4">
+                    <Link :href="fightStreaming().url">
+                        <Button
+                            size="lg"
+                            class="w-full rounded-xl px-8 py-6 text-lg font-semibold"
+                        >
+                            Fight Streaming
+                        </Button>
+                    </Link>
+                    <Link :href="fightStreamingOnline().url">
+                        <Button
+                            size="lg"
+                            variant="secondary"
+                            class="w-full rounded-xl px-8 py-6 text-lg font-semibold"
+                        >
+                            Fight Streaming Online
+                        </Button>
+                    </Link>
+                </div>
             </template>
             <template v-else-if="page.props.auth?.user?.role?.name === 'Timer'">
                 <Link :href="timer().url">

@@ -56,7 +56,10 @@ type SeniMatch = {
     round_match: string | null;
     status: string;
     is_active: boolean;
+    is_disqualified?: boolean;
+    is_passed?: boolean;
     no_order: number | null;
+    rank?: number | null;
     total_score?: string | number | null;
     total_wiraga?: string | number | null;
     total_wirasa?: string | number | null;
@@ -76,11 +79,13 @@ type SeniMatch = {
 const props = defineProps<{
     arena: any;
     activeMatch?: SeniMatch | null;
+    rankedMatches?: SeniMatch[];
 }>();
 
 const page = usePage<any>();
 const userName = computed(() => page.props.auth?.user?.name || 'Sekretaris');
 const currentMatch = ref<SeniMatch | null>(props.activeMatch ?? null);
+const rankedMatches = ref<SeniMatch[]>(props.rankedMatches ?? []);
 const hasReloadedInitialDatabaseState = ref(false);
 
 const {
@@ -141,8 +146,13 @@ const secretaryLabel = computed(() => {
 });
 
 const isWaiting = computed(() => {
-    return !currentMatch.value || currentMatch.value.status === 'not_started';
+    return (
+        rankedMatches.value.length === 0 &&
+        (!currentMatch.value || currentMatch.value.status === 'not_started')
+    );
 });
+
+const shouldShowWinnerTable = computed(() => rankedMatches.value.length > 0);
 
 const isTechniqueMatch = (match: SeniMatch | null | undefined) => {
     const matchText = [match?.type, match?.category, match?.group]
@@ -151,6 +161,44 @@ const isTechniqueMatch = (match: SeniMatch | null | undefined) => {
         .toLowerCase();
 
     return matchText.includes('ganda') || matchText.includes('trio');
+};
+
+const winnerRows = computed(() => {
+    return [...rankedMatches.value].sort((first, second) => {
+        const orderComparison =
+            Number(first.no_order ?? 0) - Number(second.no_order ?? 0);
+
+        if (orderComparison !== 0) {
+            return orderComparison;
+        }
+
+        return Number(first.rank ?? 0) - Number(second.rank ?? 0);
+    });
+});
+
+const winnerScoringMode = computed<'tgr' | 'technique'>(() => {
+    return isTechniqueMatch(winnerRows.value[0]) ? 'technique' : 'tgr';
+});
+
+const winnerStatusMeta = (match: SeniMatch) => {
+    if (match.is_disqualified) {
+        return {
+            label: 'Diskualifikasi',
+            class: 'border-red-500/30 bg-red-500/15 text-red-400',
+        };
+    }
+
+    if (match.is_passed) {
+        return {
+            label: 'Lolos',
+            class: 'border-green-500/30 bg-green-500/15 text-green-400',
+        };
+    }
+
+    return {
+        label: 'Tidak Lolos',
+        class: 'border-stone-700 bg-zinc-950 text-muted-foreground',
+    };
 };
 
 const scoreCriteria = computed(() => {
@@ -484,7 +532,13 @@ const shouldReloadScoreStateFromDatabase = (
 
 const reloadScoreStateFromDatabase = () => {
     router.reload({
-        only: ['activeMatch'],
+        only: ['activeMatch', 'rankedMatches'],
+    });
+};
+
+const reloadWinnerTableFromDatabase = () => {
+    router.reload({
+        only: ['activeMatch', 'rankedMatches'],
     });
 };
 
@@ -508,6 +562,14 @@ watch(
     { deep: true },
 );
 
+watch(
+    () => props.rankedMatches,
+    (matches) => {
+        rankedMatches.value = matches ?? [];
+    },
+    { deep: true },
+);
+
 let echoStatusChannel: any = null;
 let echoScoreChannel: any = null;
 
@@ -523,6 +585,12 @@ onMounted(() => {
     echoStatusChannel = echo
         .channel('seni.match.status')
         .listen('.SeniMatchUpdated', (event: any) => {
+            if (event.status === 'rank_updated') {
+                reloadWinnerTableFromDatabase();
+
+                return;
+            }
+
             if (!event.match) {
                 return;
             }
@@ -601,6 +669,203 @@ onUnmounted(() => {
             <FightWaitingState clickable :on-logo-click="triggerFullscreen" />
         </template>
 
+        <template v-else-if="shouldShowWinnerTable">
+            <div class="relative z-10 flex h-full w-full flex-col bg-zinc-950">
+                <div
+                    class="grid h-14 w-full shrink-0 grid-cols-[1fr_auto_1fr] items-center border-b border-stone-800 bg-zinc-900 px-6 text-[11px] font-bold tracking-widest text-muted-foreground uppercase shadow-sm"
+                >
+                    <div class="flex items-center gap-3 justify-self-start">
+                        <FightFullscreenButton
+                            :exit-click-count="exitClickCount"
+                            :is-fullscreen="isFullscreen"
+                            :remaining-exit-clicks="remainingExitClicks"
+                            :required-exit-clicks="requiredExitClicks"
+                            :title="buttonTitle"
+                            :on-trigger="triggerFullscreen"
+                        />
+                        <span class="font-bold text-yellow-500">{{
+                            secretaryLabel
+                        }}</span>
+                    </div>
+
+                    <div class="text-center text-lg font-black text-white">
+                        HASIL KEPUTUSAN SENI
+                    </div>
+
+                    <div class="justify-self-end">
+                        Gelanggang
+                        {{
+                            props.arena?.arena_name ??
+                            props.arena?.gelanggang_id ??
+                            '-'
+                        }}
+                    </div>
+                </div>
+
+                <main
+                    class="custom-scrollbar min-h-0 flex-1 overflow-y-auto p-6"
+                >
+                    <section
+                        class="overflow-hidden rounded-lg border border-stone-800 bg-zinc-900 shadow-[0_18px_50px_rgba(0,0,0,0.28)]"
+                    >
+                        <table class="w-full min-w-[1180px] border-collapse">
+                            <thead>
+                                <tr
+                                    class="border-b border-stone-800 bg-zinc-950/70 text-left text-xs font-black tracking-widest text-muted-foreground uppercase"
+                                >
+                                    <th class="px-4 py-4 text-center">
+                                        No Urut
+                                    </th>
+                                    <th class="px-4 py-4 text-center">Rank</th>
+                                    <th class="px-4 py-4">Kontingen</th>
+                                    <th class="px-4 py-4">Atlet</th>
+                                    <th class="px-4 py-4 text-right">Total</th>
+                                    <template
+                                        v-if="winnerScoringMode === 'tgr'"
+                                    >
+                                        <th class="px-4 py-4 text-right">
+                                            Wiraga
+                                        </th>
+                                        <th class="px-4 py-4 text-right">
+                                            Wirasa
+                                        </th>
+                                    </template>
+                                    <template v-else>
+                                        <th class="px-4 py-4 text-right">
+                                            Kualitas Teknik
+                                        </th>
+                                        <th class="px-4 py-4 text-right">
+                                            Kuantitas Teknik
+                                        </th>
+                                    </template>
+                                    <th class="px-4 py-4 text-right">
+                                        Hukuman
+                                    </th>
+                                    <th class="px-4 py-4 text-center">Waktu</th>
+                                    <th class="px-4 py-4 text-center">
+                                        Status
+                                    </th>
+                                </tr>
+                            </thead>
+                            <tbody class="divide-y divide-stone-800">
+                                <tr
+                                    v-for="match in winnerRows"
+                                    :key="match.id"
+                                    :class="[
+                                        'text-white',
+                                        match.is_passed
+                                            ? 'bg-green-500/10'
+                                            : 'bg-zinc-900',
+                                    ]"
+                                >
+                                    <td
+                                        class="px-4 py-4 text-center font-bold tabular-nums"
+                                    >
+                                        {{ match.no_order ?? '-' }}
+                                    </td>
+                                    <td
+                                        class="px-4 py-4 text-center text-4xl font-black text-yellow-400 tabular-nums"
+                                    >
+                                        {{ match.rank ?? '-' }}
+                                    </td>
+                                    <td class="px-4 py-4 font-bold uppercase">
+                                        {{ match.contingent ?? '-' }}
+                                    </td>
+                                    <td class="px-4 py-4 uppercase">
+                                        {{ match.atletes ?? '-' }}
+                                    </td>
+                                    <td
+                                        class="px-4 py-4 text-right text-xl font-black text-yellow-400 tabular-nums"
+                                    >
+                                        {{
+                                            formatScore(
+                                                numericValue(match.total_score),
+                                            )
+                                        }}
+                                    </td>
+                                    <template
+                                        v-if="winnerScoringMode === 'tgr'"
+                                    >
+                                        <td
+                                            class="px-4 py-4 text-right text-lg font-black tabular-nums"
+                                        >
+                                            {{
+                                                formatScore(
+                                                    numericValue(
+                                                        match.total_wiraga,
+                                                    ),
+                                                )
+                                            }}
+                                        </td>
+                                        <td
+                                            class="px-4 py-4 text-right text-lg font-black tabular-nums"
+                                        >
+                                            {{
+                                                formatScore(
+                                                    numericValue(
+                                                        match.total_wirasa,
+                                                    ),
+                                                )
+                                            }}
+                                        </td>
+                                    </template>
+                                    <template v-else>
+                                        <td
+                                            class="px-4 py-4 text-right text-lg font-black tabular-nums"
+                                        >
+                                            {{
+                                                formatScore(
+                                                    numericValue(
+                                                        match.total_kualitas_teknik,
+                                                    ),
+                                                )
+                                            }}
+                                        </td>
+                                        <td
+                                            class="px-4 py-4 text-right text-lg font-black tabular-nums"
+                                        >
+                                            {{
+                                                formatScore(
+                                                    numericValue(
+                                                        match.total_kuantitas_teknik,
+                                                    ),
+                                                )
+                                            }}
+                                        </td>
+                                    </template>
+                                    <td
+                                        class="px-4 py-4 text-right text-xl font-black text-red-500 tabular-nums"
+                                    >
+                                        {{
+                                            formatCell(
+                                                numericValue(
+                                                    match.total_punishment,
+                                                ),
+                                                true,
+                                            )
+                                        }}
+                                    </td>
+                                    <td class="px-4 py-4 text-center">
+                                        {{ formatTime(match.time) }}
+                                    </td>
+                                    <td class="px-4 py-4 text-center">
+                                        <span
+                                            :class="[
+                                                'inline-flex rounded-md border px-3 py-1 text-xs font-black tracking-widest uppercase',
+                                                winnerStatusMeta(match).class,
+                                            ]"
+                                        >
+                                            {{ winnerStatusMeta(match).label }}
+                                        </span>
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </section>
+                </main>
+            </div>
+        </template>
+
         <template v-else>
             <div class="relative z-10 flex h-full w-full flex-col bg-zinc-900">
                 <div
@@ -667,7 +932,7 @@ onUnmounted(() => {
                             </h1>
                         </div>
                         <p
-                            class="mt-1 py-1 text-[18px] font-bold uppercase text-black"
+                            class="mt-1 py-1 text-[18px] font-bold text-black uppercase"
                         >
                             {{ currentMatch?.contingent ?? '-' }}
                         </p>
@@ -714,7 +979,7 @@ onUnmounted(() => {
                                     <tr
                                         v-for="criterion in scoreCriteria"
                                         :key="criterion.key"
-                                        class="border-b border-zinc-800/60 text-center transition-colors "
+                                        class="border-b border-zinc-800/60 text-center transition-colors"
                                     >
                                         <th
                                             class="text-md border-r border-zinc-800/70 bg-zinc-900 px-4 py-2.5 text-left font-bold tracking-wide text-white uppercase"
@@ -802,7 +1067,7 @@ onUnmounted(() => {
                                     <tr
                                         v-for="punishment in punishmentCriteria"
                                         :key="punishment.key"
-                                        class="border-b border-zinc-800/60 text-center transition-colors "
+                                        class="border-b border-zinc-800/60 text-center transition-colors"
                                     >
                                         <th
                                             class="text-md border-r border-zinc-800/70 bg-zinc-900 px-4 py-2.5 text-left font-bold tracking-wide text-white uppercase"
