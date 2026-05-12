@@ -136,7 +136,16 @@ const isTechniqueMatch = (match: SeniMatch | null | undefined) => {
     return matchText.includes('ganda') || matchText.includes('trio');
 };
 
-const shouldShowWinnerTable = computed(() => rankedMatches.value.length > 0);
+const hasActiveMatch = computed(() => currentMatch.value !== null);
+
+const shouldShowWinnerTable = computed(() => {
+    return (
+        rankedMatches.value.length > 0 &&
+        rankedMatches.value.every(
+            (match) => match.rank !== null && match.rank !== undefined,
+        )
+    );
+});
 
 const winnerRows = computed(() => {
     return [...rankedMatches.value].sort((first, second) => {
@@ -218,9 +227,7 @@ const matchMetaLabel = computed(() => {
         .join(' ');
 });
 
-const athleteNames = computed(() => {
-    const athletes = currentMatch.value?.atletes;
-
+const athleteNamesFor = (athletes: string | string[] | null | undefined) => {
     if (Array.isArray(athletes)) {
         return athletes.filter(Boolean);
     }
@@ -230,12 +237,36 @@ const athleteNames = computed(() => {
     }
 
     return athletes
-        .split(/[,;|]/)
+        .split(/[,;|/]/)
         .map((athlete) => athlete.trim())
         .filter(Boolean);
-});
+};
 
-const athleteDisplay = computed(() => athleteNames.value.join(' / '));
+const formatAthleteNames = (names: string[]) => {
+    if (names.length === 0) {
+        return '-';
+    }
+
+    if (names.length === 1) {
+        return names[0];
+    }
+
+    if (names.length === 2) {
+        return `${names[0]} & ${names[1]}`;
+    }
+
+    return `${names.slice(0, -1).join(', ')} & ${names[names.length - 1]}`;
+};
+
+const athleteNames = computed(() =>
+    athleteNamesFor(currentMatch.value?.atletes),
+);
+
+const athleteDisplay = computed(() => formatAthleteNames(athleteNames.value));
+
+const athleteDisplayFor = (match: SeniMatch) => {
+    return formatAthleteNames(athleteNamesFor(match.atletes));
+};
 
 const juryScores = computed(() => currentMatch.value?.jury_scores ?? []);
 const juryPunishments = computed(
@@ -670,7 +701,11 @@ onUnmounted(() => {
     >
         <Transition name="broadcast-status" mode="out-in">
             <article
-                v-if="shouldShowWinnerTable"
+                v-if="
+                    hasActiveMatch &&
+                    shouldShowWinnerTable &&
+                    matchStatus !== 'done'
+                "
                 key="winner-table"
                 class="overlay-shell absolute inset-x-0 bottom-[4vh] mx-auto max-h-[82vh] w-[min(92vw,1440px)] cursor-pointer overflow-hidden rounded-md border border-white/25 bg-black/65 text-white shadow-2xl backdrop-blur-sm"
                 :title="buttonTitle"
@@ -739,7 +774,7 @@ onUnmounted(() => {
                                     {{ match.contingent ?? '-' }}
                                 </td>
                                 <td class="px-3 py-2 uppercase">
-                                    {{ match.atletes ?? '-' }}
+                                    {{ athleteDisplayFor(match) }}
                                 </td>
                                 <td
                                     class="px-3 py-2 text-right text-lg font-black text-yellow-300 tabular-nums"
@@ -830,7 +865,7 @@ onUnmounted(() => {
             </article>
 
             <section
-                v-else-if="matchStatus === 'not_started'"
+                v-else-if="hasActiveMatch && matchStatus === 'not_started'"
                 key="not-started"
                 class="absolute inset-x-0 bottom-[5vh] flex justify-center px-4"
             >
@@ -854,10 +889,22 @@ onUnmounted(() => {
                         <div
                             class="overlay-yellow flex min-w-0 flex-col justify-center gap-0.5 bg-yellow-300 px-5 text-black"
                         >
+                            <ul
+                                v-if="athleteNames.length > 1"
+                                class="max-w-full list-disc space-y-0.5 pl-5 text-[clamp(0.95rem,1.25vw,1.35rem)] leading-tight font-black break-words uppercase drop-shadow-sm"
+                            >
+                                <li
+                                    v-for="athlete in athleteNames"
+                                    :key="athlete"
+                                >
+                                    {{ athlete }}
+                                </li>
+                            </ul>
                             <h2
+                                v-else
                                 class="max-w-full text-[clamp(1rem,1.45vw,1.65rem)] leading-tight font-black break-words uppercase drop-shadow-sm"
                             >
-                                {{ athleteDisplay || '-' }}
+                                {{ athleteNames[0] || '-' }}
                             </h2>
                             <p
                                 class="max-w-full text-xs leading-tight font-bold tracking-wide break-words uppercase"
@@ -897,7 +944,7 @@ onUnmounted(() => {
             </section>
 
             <section
-                v-else-if="matchStatus === 'ongoing'"
+                v-else-if="hasActiveMatch && matchStatus === 'ongoing'"
                 key="ongoing"
                 class="absolute inset-x-0 bottom-[4.5vh] flex flex-col items-center gap-1 px-4"
             >
@@ -983,7 +1030,7 @@ onUnmounted(() => {
             </section>
 
             <article
-                v-else
+                v-else-if="hasActiveMatch"
                 key="detail"
                 class="overlay-shell absolute inset-x-0 bottom-[4vh] mx-auto max-h-[82vh] w-[min(92vw,1450px)] cursor-pointer overflow-hidden rounded-md border border-white/25 bg-black/65 text-white shadow-2xl backdrop-blur-sm"
                 :title="buttonTitle"

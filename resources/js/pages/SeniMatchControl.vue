@@ -116,6 +116,7 @@ const currentMatches = ref<SeniMatch[]>(props.matches ?? []);
 const isSetupDialogOpen = ref(false);
 const isLoading = ref(false);
 const isRefreshing = ref(false);
+const isRefreshConfirmDialogOpen = ref(false);
 const isConfirmDialogOpen = ref(false);
 const isMatchConfirmDialogOpen = ref(false);
 const isDecisionDialogOpen = ref(false);
@@ -237,6 +238,10 @@ const allMatchesDone = computed(() => {
         currentMatches.value.length > 0 &&
         currentMatches.value.every((match) => match.status === 'done')
     );
+});
+
+const canRefreshPools = computed(() => {
+    return !activeMatch.value || activeMatch.value.status === 'not_started';
 });
 
 const pendingMatchTitle = computed(() => {
@@ -489,6 +494,12 @@ const refreshPools = async () => {
         return;
     }
 
+    if (!canRefreshPools.value) {
+        toast.error('Refresh hanya bisa dilakukan saat partai belum dimulai.');
+
+        return;
+    }
+
     isRefreshing.value = true;
 
     try {
@@ -501,6 +512,7 @@ const refreshPools = async () => {
         pools.value = response.data?.data ?? [];
         selectedPool.value = null;
         setCurrentMatches([]);
+        isRefreshConfirmDialogOpen.value = false;
         router.reload({ only: ['pools', 'arena'] });
         toast.success('Pool seni berhasil diperbarui.');
     } catch (e) {
@@ -509,6 +521,16 @@ const refreshPools = async () => {
     } finally {
         isRefreshing.value = false;
     }
+};
+
+const openRefreshConfirm = () => {
+    if (!canRefreshPools.value) {
+        toast.error('Refresh hanya bisa dilakukan saat partai belum dimulai.');
+
+        return;
+    }
+
+    isRefreshConfirmDialogOpen.value = true;
 };
 
 const openPoolConfirm = (pool: SeniPool) => {
@@ -1191,8 +1213,8 @@ onUnmounted(() => {
                 <Button
                     variant="outline"
                     size="sm"
-                    @click="refreshPools"
-                    :disabled="isRefreshing"
+                    @click="openRefreshConfirm"
+                    :disabled="isRefreshing || !canRefreshPools"
                     class="text-muted-foreground hover:text-foreground"
                 >
                     <RefreshCw
@@ -1859,6 +1881,38 @@ onUnmounted(() => {
                         :disabled="!selectedSesi || isLoading"
                     >
                         {{ isLoading ? 'Menyimpan...' : 'Simpan' }}
+                    </Button>
+                </DialogFooter>
+            </DialogContent>
+        </Dialog>
+
+        <Dialog
+            :open="isRefreshConfirmDialogOpen"
+            @update:open="isRefreshConfirmDialogOpen = $event"
+        >
+            <DialogContent class="sm:max-w-[440px]">
+                <DialogHeader>
+                    <DialogTitle>Refresh Pool Seni</DialogTitle>
+                    <DialogDescription>
+                        Ambil ulang daftar pool seni dari server untuk
+                        gelanggang dan sesi saat ini?
+                    </DialogDescription>
+                </DialogHeader>
+                <DialogFooter>
+                    <Button
+                        variant="ghost"
+                        @click="isRefreshConfirmDialogOpen = false"
+                    >
+                        Batal
+                    </Button>
+                    <Button @click="refreshPools" :disabled="isRefreshing">
+                        <RefreshCw
+                            :class="[
+                                'h-4 w-4',
+                                isRefreshing ? 'animate-spin' : '',
+                            ]"
+                        />
+                        {{ isRefreshing ? 'Refresh...' : 'Ya, Refresh' }}
                     </Button>
                 </DialogFooter>
             </DialogContent>

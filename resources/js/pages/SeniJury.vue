@@ -3,10 +3,10 @@ import { Head, router, usePage } from '@inertiajs/vue3';
 import axios from 'axios';
 import { Delete } from 'lucide-vue-next';
 import { computed, onMounted, onUnmounted, reactive, ref, watch } from 'vue';
+import { storeJuryScore } from '@/actions/App/Http/Controllers/Api/SeniScoringController';
 import FightFullscreenButton from '@/components/fight/FightFullscreenButton.vue';
 import FightWaitingState from '@/components/fight/FightWaitingState.vue';
 import { useFullscreenLock } from '@/composables/useFullscreenLock';
-import { storeJuryScore } from '@/actions/App/Http/Controllers/Api/SeniScoringController';
 
 type ScoreKey =
     | 'wiraga'
@@ -74,8 +74,8 @@ const page = usePage<any>();
 const userName = computed(() => page.props.auth?.user?.name || 'Juri 1');
 const currentMatch = ref<SeniMatch | null>(props.activeMatch ?? null);
 const selectedScoreKey = ref<ScoreKey>('wiraga');
-const isSavingScore = ref(false);
 const isReloadingScoreState = ref(false);
+const saveQueues = new Map<string, Promise<boolean>>();
 
 const {
     buttonTitle,
@@ -261,81 +261,97 @@ const clampScore = (criterion: ScoreCriterion, value: number) => {
     return Math.min(criterion.max, Math.max(criterion.min, value));
 };
 
-const applySavedMatch = (match: SeniMatch | null | undefined) => {
-    if (!match) {
-        return;
-    }
-
-    currentMatch.value = match;
-    resetDraftFromMatch(match);
-};
-
-const saveJuryInput = async (
+const persistJuryInput = async (
+    matchId: number,
     type: 'score' | 'punishment',
     field: ScoreKey | PunishmentKey,
     value: number,
 ) => {
-    if (!currentMatch.value || currentMatch.value.status !== 'ongoing') {
-        return false;
-    }
-
-    isSavingScore.value = true;
-
     try {
-        const response = await axios.post(
-            storeJuryScore.url(currentMatch.value.id),
-            {
-                jury_number: juryNumber.value,
-                type,
-                field,
-                value,
-            },
-        );
-
-        if (response.data?.data) {
-            applySavedMatch(response.data.data);
-        }
+        await axios.post(storeJuryScore.url(matchId), {
+            jury_number: juryNumber.value,
+            type,
+            field,
+            value,
+        });
 
         return true;
     } catch (e) {
         console.error('Failed to save seni jury score:', e);
 
         return false;
-    } finally {
-        isSavingScore.value = false;
     }
 };
 
-const setScore = async (criterion: ScoreCriterion, value: number) => {
+const queueJuryInput = (
+    matchId: number,
+    type: 'score' | 'punishment',
+    field: ScoreKey | PunishmentKey,
+    value: number,
+) => {
+    const queueKey = `${type}:${field}`;
+    const previousSave = saveQueues.get(queueKey) ?? Promise.resolve(true);
+    const queuedSave = previousSave
+        .catch(() => true)
+        .then(() => persistJuryInput(matchId, type, field, value));
+
+    saveQueues.set(queueKey, queuedSave);
+
+    queuedSave.finally(() => {
+        if (saveQueues.get(queueKey) === queuedSave) {
+            saveQueues.delete(queueKey);
+        }
+    });
+
+    return queuedSave;
+};
+
+const setScore = (criterion: ScoreCriterion, value: number) => {
+    if (!currentMatch.value || currentMatch.value.status !== 'ongoing') {
+        return;
+    }
+
+    const matchId = currentMatch.value.id;
     const previousValue = scoreDraft[criterion.key];
     const nextValue = clampScore(criterion, value);
     scoreDraft[criterion.key] = nextValue;
 
-    const saved = await saveJuryInput('score', criterion.key, nextValue);
-
-    if (!saved) {
-        scoreDraft[criterion.key] = previousValue;
-    }
+    queueJuryInput(matchId, 'score', criterion.key, nextValue).then((saved) => {
+        if (
+            !saved &&
+            currentMatch.value?.id === matchId &&
+            scoreDraft[criterion.key] === nextValue
+        ) {
+            scoreDraft[criterion.key] = previousValue;
+        }
+    });
 };
 
-const adjustPunishment = async (
-    punishment: PunishmentCriterion,
-    amount: number,
-) => {
+const adjustPunishment = (punishment: PunishmentCriterion, amount: number) => {
+    if (!currentMatch.value || currentMatch.value.status !== 'ongoing') {
+        return;
+    }
+
+    const matchId = currentMatch.value.id;
     const previousCount = punishmentCounts[punishment.key];
     const nextCount = Math.max(0, previousCount + amount);
 
     punishmentCounts[punishment.key] = nextCount;
 
-    const saved = await saveJuryInput(
+    queueJuryInput(
+        matchId,
         'punishment',
         punishment.key,
         nextCount * punishment.amount,
-    );
-
-    if (!saved) {
-        punishmentCounts[punishment.key] = previousCount;
-    }
+    ).then((saved) => {
+        if (
+            !saved &&
+            currentMatch.value?.id === matchId &&
+            punishmentCounts[punishment.key] === nextCount
+        ) {
+            punishmentCounts[punishment.key] = previousCount;
+        }
+    });
 };
 
 const selectCriterion = (criterion: ScoreCriterion) => {
@@ -643,9 +659,8 @@ onUnmounted(() => {
                                     v-for="value in selectedScoreValues"
                                     :key="value"
                                     type="button"
-                                    :disabled="isSavingScore"
                                     :class="[
-                                        'flex h-10 items-center justify-center rounded-md border text-sm font-black tabular-nums transition disabled:cursor-wait disabled:opacity-70',
+                                        'flex h-10 items-center justify-center rounded-md border text-sm font-black tabular-nums transition',
                                         selectedCriterion &&
                                         scoreDraft[selectedCriterion.key] ===
                                             value
@@ -696,29 +711,18 @@ onUnmounted(() => {
                                     <span class="min-w-0 flex-1">
                                         <span
                                             :class="[
-                                                'block font-black leading-tight uppercase',
+                                                'block leading-tight font-black uppercase',
                                                 scoreCriteria.length > 3
-                                                    ? 'text-[11px]'
-                                                    : 'text-xs',
+                                                    ? 'text-sm'
+                                                    : 'text-lg',
                                             ]"
                                         >
                                             {{ criterion.label }}
                                         </span>
-                                        <span
-                                            :class="[
-                                                'mt-0.5 block font-bold leading-none tracking-[0.12em] uppercase opacity-70',
-                                                scoreCriteria.length > 3
-                                                    ? 'text-[9px]'
-                                                    : 'text-[10px]',
-                                            ]"
-                                        >
-                                            {{ criterion.min }} -
-                                            {{ criterion.max }}
-                                        </span>
                                     </span>
                                     <span
                                         :class="[
-                                            'font-black leading-none tabular-nums',
+                                            'leading-none font-black tabular-nums',
                                             scoreCriteria.length > 3
                                                 ? 'text-lg'
                                                 : 'text-xl',
@@ -741,14 +745,13 @@ onUnmounted(() => {
                                 class="grid grid-cols-[minmax(0,1fr)_76px_76px] items-center gap-2 rounded-md border border-stone-800 bg-zinc-900 px-3 py-1 shadow-lg"
                             >
                                 <p
-                                    class="truncate text-xs font-black tracking-wide text-white uppercase"
+                                    class="text-base leading-tight font-black tracking-wide break-words text-white uppercase"
                                 >
                                     {{ punishment.label }}
                                 </p>
                                 <button
                                     type="button"
-                                    class="flex h-10 items-center justify-center rounded-md bg-red-500 text-sm font-black text-white transition hover:bg-red-600 disabled:cursor-wait disabled:opacity-70"
-                                    :disabled="isSavingScore"
+                                    class="flex h-10 items-center justify-center rounded-md bg-red-500 text-sm font-black text-white transition hover:bg-red-600"
                                     @click="adjustPunishment(punishment, 1)"
                                 >
                                     -{{ punishment.amount }}
@@ -762,7 +765,6 @@ onUnmounted(() => {
                                             : 'bg-zinc-950 hover:bg-zinc-800',
                                     ]"
                                     :disabled="
-                                        isSavingScore ||
                                         punishmentCounts[punishment.key] === 0
                                     "
                                     :aria-label="`Hapus ${punishment.label}`"

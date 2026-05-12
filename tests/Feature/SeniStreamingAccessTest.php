@@ -139,7 +139,7 @@ class SeniStreamingAccessTest extends TestCase
             );
     }
 
-    public function test_seni_streaming_online_receives_winner_rows_when_all_matches_are_done(): void
+    public function test_seni_streaming_online_hides_winner_rows_until_all_matches_are_ranked(): void
     {
         $streamer = Role::create(['name' => 'Streamer']);
         $user = User::factory()->create(['role_id' => $streamer->id]);
@@ -185,9 +185,59 @@ class SeniStreamingAccessTest extends TestCase
             ->assertOk()
             ->assertInertia(fn (Assert $page) => $page
                 ->component('SeniStreamingOnline')
+                ->has('rankedMatches', 0)
+            );
+    }
+
+    public function test_seni_streaming_online_receives_winner_rows_when_all_matches_are_ranked(): void
+    {
+        $streamer = Role::create(['name' => 'Streamer']);
+        $user = User::factory()->create(['role_id' => $streamer->id]);
+
+        SeniSingleMatch::create([
+            'no_pool_babak_id' => 55,
+            'bkp_id' => 3412,
+            'matches_code' => 'S-03',
+            'atletes' => 'Atlet C',
+            'contingent' => 'Kontingen C',
+            'type' => 'tunggal',
+            'category' => 'Tunggal',
+            'group' => 'Putra',
+            'status' => 'done',
+            'is_active' => false,
+            'is_passed' => true,
+            'round_match' => 'Final',
+            'no_order' => 2,
+            'total_score' => 380,
+            'rank' => 1,
+        ]);
+
+        SeniSingleMatch::create([
+            'no_pool_babak_id' => 55,
+            'bkp_id' => 3413,
+            'matches_code' => 'S-04',
+            'atletes' => 'Atlet D',
+            'contingent' => 'Kontingen D',
+            'type' => 'tunggal',
+            'category' => 'Tunggal',
+            'group' => 'Putra',
+            'status' => 'done',
+            'is_active' => false,
+            'is_passed' => false,
+            'round_match' => 'Final',
+            'no_order' => 1,
+            'total_score' => 360,
+            'rank' => 2,
+        ]);
+
+        $this->actingAs($user)
+            ->get(route('seni-streaming-online'))
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->component('SeniStreamingOnline')
                 ->has('rankedMatches', 2)
                 ->where('rankedMatches.0.no_order', 1)
-                ->where('rankedMatches.0.rank', null)
+                ->where('rankedMatches.0.rank', 2)
                 ->where('rankedMatches.1.no_order', 2)
                 ->where('rankedMatches.1.rank', 1)
             );
