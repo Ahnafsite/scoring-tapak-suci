@@ -126,6 +126,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
             'arena' => Arena::first(),
             'activeMatch' => $activeMatch,
             'rankedMatches' => $rankedMatches,
+            'timer' => Timer::current()->toBroadcastPayload(),
         ]);
     })->name('seni-streaming');
 
@@ -150,6 +151,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
             'arena' => Arena::first(),
             'activeMatch' => $activeMatch,
             'rankedMatches' => $rankedMatches,
+            'timer' => Timer::current()->toBroadcastPayload(),
         ]);
     })->name('seni-streaming-online');
 

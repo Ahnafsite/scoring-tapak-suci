@@ -197,6 +197,63 @@ class SeniMatchControlTest extends TestCase
         Http::assertNotSent(fn ($request) => str_contains($request->url(), '/partai-seni/detail-partai-seni-ts/3410'));
     }
 
+    public function test_sync_pool_matches_sets_first_ongoing_match_active(): void
+    {
+        Http::fake([
+            '*/partai-seni/55' => Http::response([
+                'status' => 'success',
+                'data' => [
+                    [
+                        'bkp_id' => 3411,
+                        'match_code' => '136',
+                        'atlets' => ['Atlet B'],
+                        'contingent' => 'Kontingen B',
+                        'match_number' => 2,
+                        'status' => 'ongoing',
+                    ],
+                    [
+                        'bkp_id' => 3410,
+                        'match_code' => '135',
+                        'atlets' => ['Atlet A'],
+                        'contingent' => 'Kontingen A',
+                        'match_number' => 1,
+                        'status' => 'ongoing',
+                    ],
+                ],
+            ], 200),
+        ]);
+
+        $operator = Role::create(['name' => 'Operator']);
+        $user = User::factory()->create(['role_id' => $operator->id]);
+        $pool = SeniPool::create([
+            'no_pool_babak_id' => 55,
+            'round_match' => 'Final',
+            'group' => 'Putra',
+            'category' => 'Tunggal',
+            'no_pool' => 'A',
+        ]);
+
+        $this
+            ->actingAs($user)
+            ->postJson("/api/seni/pools/{$pool->id}/sync-matches")
+            ->assertOk()
+            ->assertJsonPath('data.0.bkp_id', 3410)
+            ->assertJsonPath('data.0.is_active', true)
+            ->assertJsonPath('data.1.bkp_id', 3411)
+            ->assertJsonPath('data.1.is_active', false);
+
+        $this->assertDatabaseHas('seni_single_matches', [
+            'bkp_id' => 3410,
+            'status' => 'ongoing',
+            'is_active' => true,
+        ]);
+        $this->assertDatabaseHas('seni_single_matches', [
+            'bkp_id' => 3411,
+            'status' => 'ongoing',
+            'is_active' => false,
+        ]);
+    }
+
     public function test_activate_match_fetches_detail_scores_and_saves_jury_scores(): void
     {
         Http::fake([

@@ -5,6 +5,7 @@ namespace Tests\Feature;
 use App\Models\Arena;
 use App\Models\Role;
 use App\Models\SeniSingleMatch;
+use App\Models\Timer;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Inertia\Testing\AssertableInertia as Assert;
@@ -29,6 +30,10 @@ class SeniStreamingAccessTest extends TestCase
         $user = User::factory()->create(['role_id' => $streamer->id]);
 
         Arena::create(['arena_name' => 'Gelanggang A']);
+        Timer::create([
+            'is_display' => true,
+            'second' => 90,
+        ]);
 
         $match = SeniSingleMatch::create([
             'no_pool_babak_id' => 55,
@@ -79,6 +84,8 @@ class SeniStreamingAccessTest extends TestCase
                 ->where('activeMatch.total_wirama', '54.000')
                 ->where('activeMatch.total_punishment', '2.000')
                 ->where('activeMatch.time', 140)
+                ->where('timer.is_display', true)
+                ->where('timer.second', 90)
                 ->has('activeMatch.jury_scores', 1)
                 ->where('activeMatch.jury_scores.0.total_score', '180.000')
                 ->where('activeMatch.jury_scores.0.is_accepted', true)
@@ -93,6 +100,10 @@ class SeniStreamingAccessTest extends TestCase
         $user = User::factory()->create(['role_id' => $streamer->id]);
 
         Arena::create(['arena_name' => 'Gelanggang B']);
+        Timer::create([
+            'is_display' => true,
+            'second' => 75,
+        ]);
 
         $match = SeniSingleMatch::create([
             'no_pool_babak_id' => 55,
@@ -132,6 +143,8 @@ class SeniStreamingAccessTest extends TestCase
                 ->has('arena')
                 ->where('activeMatch.id', $match->id)
                 ->where('activeMatch.status', 'ongoing')
+                ->where('timer.is_display', true)
+                ->where('timer.second', 75)
                 ->has('activeMatch.jury_scores', 1)
                 ->where('activeMatch.jury_scores.0.total_score', '184.000')
                 ->where('activeMatch.jury_scores.0.is_accepted', false)

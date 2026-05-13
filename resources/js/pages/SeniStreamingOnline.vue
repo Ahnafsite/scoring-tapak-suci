@@ -76,15 +76,49 @@ type SeniMatch = {
 
 type MatchDisplayStatus = 'not_started' | 'ongoing' | 'paused' | 'done';
 
+type TimerState = {
+    id: number | null;
+    is_display: boolean;
+    started_at: string | null;
+    started_at_milliseconds?: number | null;
+    status: 'running' | 'paused' | 'stopped';
+    stored_status?: 'running' | 'paused' | 'stopped';
+    is_countdown: boolean;
+    second: number;
+    is_autostop: boolean;
+    elapsed_seconds: number;
+    elapsed_milliseconds?: number;
+    display_seconds: number;
+    display_milliseconds?: number;
+};
+
 const props = defineProps<{
     arena: any;
     activeMatch?: SeniMatch | null;
     rankedMatches?: SeniMatch[];
+    timer?: TimerState;
 }>();
 
 const currentMatch = ref<SeniMatch | null>(props.activeMatch ?? null);
 const rankedMatches = ref<SeniMatch[]>(props.rankedMatches ?? []);
 const hasReloadedInitialDatabaseState = ref(false);
+const localTimer = ref<TimerState>(
+    props.timer ?? {
+        id: null,
+        is_display: false,
+        started_at: null,
+        started_at_milliseconds: null,
+        status: 'stopped',
+        is_countdown: true,
+        second: 120,
+        is_autostop: false,
+        elapsed_seconds: 0,
+        elapsed_milliseconds: 0,
+        display_seconds: 120,
+        display_milliseconds: 120000,
+    },
+);
+const timerNowTick = ref(Date.now());
 const { buttonTitle, triggerFullscreen } = useFullscreenLock();
 
 const juries = [1, 2, 3, 4, 5];
@@ -391,6 +425,61 @@ const finalScore = computed(() => {
     return numericValue(currentMatch.value?.total_score);
 });
 
+const timerElapsedMilliseconds = computed(() => {
+    let elapsed =
+        localTimer.value.elapsed_milliseconds ??
+        (Number(localTimer.value.elapsed_seconds) || 0) * 1000;
+
+    if (localTimer.value.status === 'running' && localTimer.value.started_at) {
+        elapsed += Math.max(
+            0,
+            timerNowTick.value -
+                (localTimer.value.started_at_milliseconds ??
+                    Date.parse(localTimer.value.started_at)),
+        );
+    }
+
+    return elapsed;
+});
+
+const timerDisplayMilliseconds = computed(() => {
+    if (localTimer.value.is_countdown) {
+        return Math.max(
+            0,
+            localTimer.value.second * 1000 - timerElapsedMilliseconds.value,
+        );
+    }
+
+    if (localTimer.value.is_autostop) {
+        return Math.min(
+            timerElapsedMilliseconds.value,
+            localTimer.value.second * 1000,
+        );
+    }
+
+    return timerElapsedMilliseconds.value;
+});
+
+const formattedTimer = computed(() => {
+    const safeMilliseconds = Math.max(
+        0,
+        Math.floor(timerDisplayMilliseconds.value),
+    );
+    const minutes = Math.floor(safeMilliseconds / 60000);
+    const seconds = Math.floor((safeMilliseconds % 60000) / 1000);
+    const milliseconds = safeMilliseconds % 1000;
+
+    return `${minutes.toString().padStart(2, '0')}:${seconds
+        .toString()
+        .padStart(2, '0')}:${milliseconds.toString().padStart(3, '0')}`;
+});
+
+const shouldShowActiveTimer = computed(() => {
+    return (
+        matchStatus.value === 'ongoing' && Boolean(localTimer.value.is_display)
+    );
+});
+
 const juryTotalRows = computed(() => {
     return juries.map((juryNumber) => ({
         juryNumber,
@@ -609,10 +698,26 @@ watch(
     { deep: true },
 );
 
+watch(
+    () => props.timer,
+    (timer) => {
+        if (timer) {
+            localTimer.value = { ...localTimer.value, ...timer };
+        }
+    },
+    { deep: true },
+);
+
 let echoStatusChannel: any = null;
 let echoScoreChannel: any = null;
+let echoTimerChannel: any = null;
+let timerTickInterval: ReturnType<typeof setInterval> | null = null;
 
 onMounted(() => {
+    timerTickInterval = setInterval(() => {
+        timerNowTick.value = Date.now();
+    }, 25);
+
     reloadInitialScoreStateFromDatabase();
 
     const echo = (window as any).Echo;
@@ -680,9 +785,21 @@ onMounted(() => {
                 mergeJuryPunishment(event.punishment);
             }
         });
+
+    echoTimerChannel = echo
+        .channel('timer')
+        .listen('.TimerUpdated', (event: any) => {
+            if (event.timer) {
+                localTimer.value = { ...localTimer.value, ...event.timer };
+            }
+        });
 });
 
 onUnmounted(() => {
+    if (timerTickInterval) {
+        clearInterval(timerTickInterval);
+    }
+
     const echo = (window as any).Echo;
 
     if (echoStatusChannel) {
@@ -693,9 +810,14 @@ onUnmounted(() => {
         echoScoreChannel.stopListening('.SeniJuryScoreUpdated');
     }
 
+    if (echoTimerChannel) {
+        echoTimerChannel.stopListening('.TimerUpdated');
+    }
+
     if (echo) {
         echo.leaveChannel('seni.match.status');
         echo.leaveChannel('seni.match.score');
+        echo.leaveChannel('timer');
     }
 });
 </script>
@@ -963,7 +1085,12 @@ onUnmounted(() => {
                     @click="triggerFullscreen"
                 >
                     <header
-                        class="grid min-h-14 grid-cols-[minmax(0,1fr)_9rem] items-stretch border-b border-white/15"
+                        :class="[
+                            'grid min-h-14 items-stretch border-b border-white/15',
+                            shouldShowActiveTimer
+                                ? 'grid-cols-[minmax(0,1fr)_15rem]'
+                                : 'grid-cols-[minmax(0,1fr)_9rem]',
+                        ]"
                     >
                         <div
                             class="overlay-yellow flex min-w-0 flex-col justify-center bg-yellow-300 px-5 text-black"
@@ -989,14 +1116,28 @@ onUnmounted(() => {
                                 Partai {{ partaiLabel }}
                             </div>
                             <div
-                                class="text-[10px] font-black tracking-widest text-zinc-400 uppercase"
+                                v-if="shouldShowActiveTimer"
+                                class="overlay-score font-mono text-[clamp(1.35rem,2.15vw,2.35rem)] leading-none font-black tracking-wider text-white tabular-nums"
                             >
-                                No Penampil
+                                {{ formattedTimer }}
                             </div>
+                            <template v-else>
+                                <div
+                                    class="text-[10px] font-black tracking-widest text-zinc-400 uppercase"
+                                >
+                                    No Penampil
+                                </div>
+                                <div
+                                    class="max-w-full text-[10px] leading-tight font-black break-words text-zinc-100 uppercase"
+                                >
+                                    {{ currentMatch?.no_order ?? '-' }}
+                                </div>
+                            </template>
                             <div
+                                v-if="shouldShowActiveTimer"
                                 class="max-w-full text-[10px] leading-tight font-black break-words text-zinc-100 uppercase"
                             >
-                                {{ currentMatch?.no_order ?? '-' }}
+                                No Penampil {{ currentMatch?.no_order ?? '-' }}
                             </div>
                         </div>
                     </header>

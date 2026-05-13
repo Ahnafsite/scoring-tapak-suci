@@ -127,6 +127,16 @@ class SeniScoringController extends Controller
             foreach ($matches as $match) {
                 SeniSingleMatch::create($this->mapSingleMatch($match, $pool, []));
             }
+
+            $ongoingMatch = $pool->matches()
+                ->where('status', 'ongoing')
+                ->orderBy('no_order')
+                ->first();
+
+            if ($ongoingMatch instanceof SeniSingleMatch) {
+                SeniSingleMatch::query()->update(['is_active' => false]);
+                $ongoingMatch->forceFill(['is_active' => true])->save();
+            }
         });
 
         $matches = $pool->matches()->orderBy('no_order')->get();

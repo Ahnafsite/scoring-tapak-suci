@@ -1,7 +1,16 @@
 <script setup lang="ts">
 import { Head, router } from '@inertiajs/vue3';
 import axios from 'axios';
-import { GripVertical, RefreshCw } from 'lucide-vue-next';
+import {
+    Ban,
+    CheckCircle2,
+    Circle,
+    GripVertical,
+    PauseCircle,
+    PlayCircle,
+    RefreshCw,
+    Trophy,
+} from 'lucide-vue-next';
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
 import { toast } from 'vue-sonner';
 import FightFullscreenButton from '@/components/fight/FightFullscreenButton.vue';
@@ -200,12 +209,29 @@ const sortedByNoOrder = (matches: SeniMatch[]) => {
     });
 };
 
+const normalizeActiveMatch = (matches: SeniMatch[]) => {
+    const ongoingMatch = matches.find((match) => match.status === 'ongoing');
+
+    if (!ongoingMatch) {
+        return matches;
+    }
+
+    return matches.map((match) => ({
+        ...match,
+        is_active: match.id === ongoingMatch.id,
+    }));
+};
+
 const setCurrentMatches = (
     matches: SeniMatch[] | null | undefined,
     fallback: SeniMatch[] = currentMatches.value,
 ) => {
-    currentMatches.value = sortedByNoOrder(matches ?? fallback);
+    currentMatches.value = normalizeActiveMatch(
+        sortedByNoOrder(matches ?? fallback),
+    );
 };
+
+setCurrentMatches(currentMatches.value);
 
 const replaceMatchInCurrentMatches = (updatedMatch: SeniMatch | null) => {
     if (!updatedMatch) {
@@ -303,6 +329,29 @@ const statusMeta = (
 
 const matchStatusMeta = (match: SeniMatch) => {
     return statusMeta(match.status, match.is_disqualified, match.is_passed);
+};
+
+const matchStatusIconMeta = (match: SeniMatch) => {
+    const meta = matchStatusMeta(match);
+
+    if (match.is_disqualified) {
+        return { ...meta, icon: Ban };
+    }
+
+    if (match.is_passed) {
+        return { ...meta, icon: Trophy };
+    }
+
+    switch (match.status) {
+        case 'ongoing':
+            return { ...meta, icon: PlayCircle };
+        case 'paused':
+            return { ...meta, icon: PauseCircle };
+        case 'done':
+            return { ...meta, icon: CheckCircle2 };
+        default:
+            return { ...meta, icon: Circle };
+    }
 };
 
 const isTechniqueMatch = (match: SeniMatch | null | undefined) => {
@@ -1551,6 +1600,7 @@ onUnmounted(() => {
                                             <th class="px-3 py-3 text-right">
                                                 Waktu
                                             </th>
+                                            <th class="w-12 px-3 py-3"></th>
                                             <th class="px-3 py-3 text-center">
                                                 Status
                                             </th>
@@ -1663,6 +1713,35 @@ onUnmounted(() => {
                                             </td>
                                             <td class="px-3 py-3 text-right">
                                                 {{ formatTime(match.time) }}
+                                            </td>
+                                            <td class="px-3 py-3 text-center">
+                                                <Badge
+                                                    :title="
+                                                        matchStatusIconMeta(
+                                                            match,
+                                                        ).label
+                                                    "
+                                                    :aria-label="
+                                                        matchStatusIconMeta(
+                                                            match,
+                                                        ).label
+                                                    "
+                                                    :class="[
+                                                        'inline-flex h-8 w-8 items-center justify-center rounded-full p-0',
+                                                        matchStatusIconMeta(
+                                                            match,
+                                                        ).class,
+                                                    ]"
+                                                >
+                                                    <component
+                                                        :is="
+                                                            matchStatusIconMeta(
+                                                                match,
+                                                            ).icon
+                                                        "
+                                                        class="h-4 w-4"
+                                                    />
+                                                </Badge>
                                             </td>
                                             <td class="px-3 py-3 text-center">
                                                 <Badge
