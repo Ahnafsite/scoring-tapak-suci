@@ -243,6 +243,60 @@ class SeniStreamingAccessTest extends TestCase
             );
     }
 
+    public function test_seni_streaming_online_receives_winner_rows_when_all_matches_are_ranked_before_all_are_done(): void
+    {
+        $streamer = Role::create(['name' => 'Streamer']);
+        $user = User::factory()->create(['role_id' => $streamer->id]);
+
+        $activeMatch = SeniSingleMatch::create([
+            'no_pool_babak_id' => 55,
+            'bkp_id' => 3414,
+            'matches_code' => 'S-05',
+            'atletes' => 'Atlet E',
+            'contingent' => 'Kontingen E',
+            'type' => 'tunggal',
+            'category' => 'Tunggal',
+            'group' => 'Putri',
+            'status' => 'paused',
+            'is_active' => true,
+            'is_passed' => true,
+            'round_match' => 'Final',
+            'no_order' => 1,
+            'total_score' => 390,
+            'rank' => 1,
+        ]);
+
+        SeniSingleMatch::create([
+            'no_pool_babak_id' => 55,
+            'bkp_id' => 3415,
+            'matches_code' => 'S-06',
+            'atletes' => 'Atlet F',
+            'contingent' => 'Kontingen F',
+            'type' => 'tunggal',
+            'category' => 'Tunggal',
+            'group' => 'Putri',
+            'status' => 'done',
+            'is_active' => false,
+            'is_passed' => false,
+            'round_match' => 'Final',
+            'no_order' => 2,
+            'total_score' => 370,
+            'rank' => 2,
+        ]);
+
+        $this->actingAs($user)
+            ->get(route('seni-streaming-online'))
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->component('SeniStreamingOnline')
+                ->where('activeMatch.id', $activeMatch->id)
+                ->where('activeMatch.status', 'paused')
+                ->has('rankedMatches', 2)
+                ->where('rankedMatches.0.rank', 1)
+                ->where('rankedMatches.1.rank', 2)
+            );
+    }
+
     public function test_non_streamers_cannot_view_seni_streaming_pages(): void
     {
         $operator = Role::create(['name' => 'Operator']);

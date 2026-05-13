@@ -128,15 +128,15 @@ const techniquePunishments: PunishmentCriterion[] = [
 ];
 
 const scoreDraft = reactive<Record<ScoreKey, number>>({
-    wiraga: 40,
-    wirasa: 20,
-    wirama: 10,
-    kualitas_teknik: 40,
-    kuantitas_teknik: 20,
-    ketangkasan: 20,
-    stamina: 10,
-    kemantapan: 10,
-    musik: 10,
+    wiraga: 0,
+    wirasa: 0,
+    wirama: 0,
+    kualitas_teknik: 0,
+    kuantitas_teknik: 0,
+    ketangkasan: 0,
+    stamina: 0,
+    kemantapan: 0,
+    musik: 0,
 });
 
 const punishmentCounts = reactive<Record<PunishmentKey, number>>({
@@ -258,7 +258,7 @@ const selectedScoreValues = computed(() => {
 });
 
 const clampScore = (criterion: ScoreCriterion, value: number) => {
-    return Math.min(criterion.max, Math.max(criterion.min, value));
+    return Math.min(criterion.max, Math.max(0, value));
 };
 
 const persistJuryInput = async (
@@ -404,7 +404,7 @@ const resetDraftFromMatch = (
     options: { resetSelectedCriterion?: boolean } = {},
 ) => {
     for (const criterion of scoreCriteria.value) {
-        scoreDraft[criterion.key] = criterion.min;
+        scoreDraft[criterion.key] = 0;
     }
 
     for (const punishment of Object.keys(punishmentCounts) as PunishmentKey[]) {
@@ -415,7 +415,7 @@ const resetDraftFromMatch = (
     const juryPunishment = currentJuryPunishment(match);
 
     for (const criterion of scoreCriteria.value) {
-        const value = Number(juryScore?.[criterion.key] ?? criterion.min);
+        const value = Number(juryScore?.[criterion.key] ?? 0);
         scoreDraft[criterion.key] = clampScore(criterion, value);
     }
 

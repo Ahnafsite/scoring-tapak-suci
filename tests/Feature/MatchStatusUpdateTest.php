@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Events\ActiveMatchUpdated;
 use App\Events\JuryScoreUpdated;
 use App\Models\FightDetailJuryPointBlue;
 use App\Models\FightDetailJuryPointYellow;
@@ -135,6 +136,99 @@ class MatchStatusUpdateTest extends TestCase
                 && $event->scoreDetail === null
                 && $event->recap->is($recap->fresh())
                 && $event->recap->winner === 'blue',
+        );
+    }
+
+    public function test_pausing_tbh_round_broadcasts_lightweight_match_status_update(): void
+    {
+        Event::fake([ActiveMatchUpdated::class]);
+
+        $operator = Role::create(['name' => 'Operator']);
+        $user = User::factory()->create(['role_id' => $operator->id]);
+        $match = FightMatch::create([
+            'status' => 'ongoing',
+            'round_number' => 3,
+        ]);
+
+        $response = $this
+            ->actingAs($user)
+            ->postJson('/api/partai/update-status', [
+                'id' => $match->id,
+                'status' => 'paused',
+            ]);
+
+        $response
+            ->assertOk()
+            ->assertJsonPath('data.status', 'paused')
+            ->assertJsonPath('data.round_number', 3);
+
+        Event::assertDispatched(
+            ActiveMatchUpdated::class,
+            fn (ActiveMatchUpdated $event): bool => $event->match['id'] === $match->id
+                && $event->match['status'] === 'paused'
+                && $event->match['round_number'] === 3,
+        );
+    }
+
+    public function test_saving_keputusan_pemenang_from_paused_to_done_broadcasts_lightweight_status_update(): void
+    {
+        Event::fake([ActiveMatchUpdated::class]);
+        Http::fake([
+            '*' => Http::response(['success' => true], 200),
+        ]);
+
+        $operator = Role::create(['name' => 'Operator']);
+        $user = User::factory()->create(['role_id' => $operator->id]);
+        $schedule = FightSchedule::create([
+            'partai_id' => 'P-005',
+            'status' => 'paused',
+        ]);
+        $match = FightMatch::create([
+            'fight_schedule_id' => $schedule->id,
+            'partai_id' => 'P-005',
+            'status' => 'paused',
+            'round_number' => 3,
+        ]);
+
+        foreach ([1, 2, 3] as $roundNumber) {
+            FightRecapJuryPoint::create([
+                'round_number' => $roundNumber,
+                'total_poin_yellow' => 10 * $roundNumber,
+                'total_poin_blue' => 5 * $roundNumber,
+                'winner' => $roundNumber === 2 ? 'blue' : 'yellow',
+            ]);
+            FightDetailJuryPointBlue::create([
+                'jury_number' => 1,
+                'round_number' => $roundNumber,
+            ]);
+            FightDetailJuryPointYellow::create([
+                'jury_number' => 1,
+                'round_number' => $roundNumber,
+            ]);
+        }
+
+        $response = $this
+            ->actingAs($user)
+            ->postJson('/api/partai/save-partai-data-ts/P-005', [
+                'winner_corner' => 'yellow',
+                'winner_status' => 'menang_angka',
+            ]);
+
+        $response
+            ->assertOk()
+            ->assertJsonPath('data.status', 'done')
+            ->assertJsonPath('data.round_number', 3)
+            ->assertJsonPath('data.winner_corner', 'yellow')
+            ->assertJsonPath('data.winner_status', 'menang_angka');
+
+        Event::assertDispatched(
+            ActiveMatchUpdated::class,
+            fn (ActiveMatchUpdated $event): bool => array_diff(array_keys(get_object_vars($event)), ['match', 'socket']) === []
+                && $event->match['id'] === $match->id
+                && $event->match['status'] === 'done'
+                && $event->match['round_number'] === 3
+                && $event->match['winner_corner'] === 'yellow'
+                && $event->match['winner_status'] === 'menang_angka',
         );
     }
 

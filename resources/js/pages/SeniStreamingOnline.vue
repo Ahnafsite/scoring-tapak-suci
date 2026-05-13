@@ -217,6 +217,13 @@ const matchStatus = computed<MatchDisplayStatus>(() => {
     return 'not_started';
 });
 
+const shouldShowCurrentMatchRecap = computed(() => {
+    return (
+        hasActiveMatch.value &&
+        (matchStatus.value === 'paused' || matchStatus.value === 'done')
+    );
+});
+
 const matchMetaLabel = computed(() => {
     return [
         currentMatch.value?.round_match,
@@ -701,11 +708,7 @@ onUnmounted(() => {
     >
         <Transition name="broadcast-status" mode="out-in">
             <article
-                v-if="
-                    hasActiveMatch &&
-                    shouldShowWinnerTable &&
-                    matchStatus !== 'done'
-                "
+                v-if="shouldShowWinnerTable"
                 key="winner-table"
                 class="overlay-shell absolute inset-x-0 bottom-[4vh] mx-auto max-h-[82vh] w-[min(92vw,1440px)] cursor-pointer overflow-hidden rounded-md border border-white/25 bg-black/65 text-white shadow-2xl backdrop-blur-sm"
                 :title="buttonTitle"
@@ -1030,7 +1033,7 @@ onUnmounted(() => {
             </section>
 
             <article
-                v-else-if="hasActiveMatch"
+                v-else-if="shouldShowCurrentMatchRecap"
                 key="detail"
                 class="overlay-shell absolute inset-x-0 bottom-[4vh] mx-auto max-h-[82vh] w-[min(92vw,1450px)] cursor-pointer overflow-hidden rounded-md border border-white/25 bg-black/65 text-white shadow-2xl backdrop-blur-sm"
                 :title="buttonTitle"

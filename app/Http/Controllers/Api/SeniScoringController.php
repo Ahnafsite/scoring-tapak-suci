@@ -1193,19 +1193,19 @@ class SeniScoringController extends Controller
     {
         if ($this->isTechniqueMatch($match)) {
             return [
-                'kualitas_teknik' => 40,
-                'kuantitas_teknik' => 20,
-                'ketangkasan' => 20,
-                'stamina' => 10,
-                'kemantapan' => 10,
-                'musik' => 10,
+                'kualitas_teknik' => 0,
+                'kuantitas_teknik' => 0,
+                'ketangkasan' => 0,
+                'stamina' => 0,
+                'kemantapan' => 0,
+                'musik' => 0,
             ];
         }
 
         return [
-            'wiraga' => 40,
-            'wirasa' => 20,
-            'wirama' => 10,
+            'wiraga' => 0,
+            'wirasa' => 0,
+            'wirama' => 0,
         ];
     }
 

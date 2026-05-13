@@ -35,7 +35,6 @@ const { buttonTitle, triggerFullscreen } = useFullscreenLock();
 const localRecapPoints = ref<any[]>([...(props.recapPoints || [])]);
 const localYellowPoints = ref<any[]>([...(props.yellowPoints || [])]);
 const localBluePoints = ref<any[]>([...(props.bluePoints || [])]);
-const buzzerAudio = ref<HTMLAudioElement | null>(null);
 const localTimer = ref<TimerState>(
     props.timer ?? {
         id: null,
@@ -52,11 +51,21 @@ const localTimer = ref<TimerState>(
         display_milliseconds: 120000,
     },
 );
-
-const resetLocalScoreState = () => {
-    localYellowPoints.value = [];
-    localBluePoints.value = [];
-    localRecapPoints.value = [];
+const timerNowTick = ref(Date.now());
+const scoreNameById: Record<number, string> = {
+    1: '20',
+    2: '10+20',
+    3: '30',
+    4: '10+30',
+    5: '40',
+    6: '10+40',
+    7: '50',
+};
+const punishmentScoreById: Record<number, number> = {
+    1: 10,
+    2: 20,
+    3: 30,
+    4: 40,
 };
 
 const shouldReloadScoresForMatchUpdate = (updatedMatch: any) => {
@@ -68,12 +77,32 @@ const shouldReloadScoresForMatchUpdate = (updatedMatch: any) => {
         return true;
     }
 
+    const statusChanged = currentMatch.value.status !== updatedMatch.status;
+    const shouldRefreshRecap = ['paused', 'done'].includes(updatedMatch.status);
+
     return (
         currentMatch.value.id !== updatedMatch.id ||
         currentMatch.value.round_number !== updatedMatch.round_number ||
         (updatedMatch.status === 'ongoing' &&
-            currentMatch.value.status !== 'ongoing')
+            currentMatch.value.status !== 'ongoing') ||
+        (statusChanged && shouldRefreshRecap)
     );
+};
+
+const applyScoreStateFromProps = (pageProps: any) => {
+    localRecapPoints.value = [...(pageProps.recapPoints || [])];
+    localYellowPoints.value = [...(pageProps.yellowPoints || [])];
+    localBluePoints.value = [...(pageProps.bluePoints || [])];
+    currentMatch.value = pageProps.activeMatch ?? null;
+};
+
+const reloadScoreStateFromDatabase = () => {
+    router.reload({
+        only: ['activeMatch', 'recapPoints', 'yellowPoints', 'bluePoints'],
+        onSuccess: (page: any) => {
+            applyScoreStateFromProps(page.props);
+        },
+    });
 };
 
 const isScoreEventForCurrentMatch = (event: any) => {
@@ -85,30 +114,19 @@ const isScoreEventForCurrentMatch = (event: any) => {
 };
 
 watch(
-    () => props.activeMatch,
-    (newVal) => {
-        currentMatch.value = newVal;
-    },
-    { deep: true },
-);
-watch(
-    () => props.recapPoints,
-    (newVal) => {
-        localRecapPoints.value = [...(newVal || [])];
-    },
-    { deep: true },
-);
-watch(
-    () => props.yellowPoints,
-    (newVal) => {
-        localYellowPoints.value = [...(newVal || [])];
-    },
-    { deep: true },
-);
-watch(
-    () => props.bluePoints,
-    (newVal) => {
-        localBluePoints.value = [...(newVal || [])];
+    () => [
+        props.activeMatch,
+        props.recapPoints,
+        props.yellowPoints,
+        props.bluePoints,
+    ],
+    ([activeMatch, recapPoints, yellowPoints, bluePoints]) => {
+        applyScoreStateFromProps({
+            activeMatch,
+            recapPoints,
+            yellowPoints,
+            bluePoints,
+        });
     },
     { deep: true },
 );
@@ -142,6 +160,8 @@ const matchStatus = computed<MatchDisplayStatus>(() => {
     return 'not_started';
 });
 
+const hasActiveMatch = computed(() => currentMatch.value !== null);
+
 const isSameRound = (left: any, right: any) => Number(left) === Number(right);
 
 const activeRoundRecap = computed(() => {
@@ -170,48 +190,6 @@ const upsertRecapPoint = (recap: any) => {
     localRecapPoints.value.push(recap);
 };
 
-const isBuzzerActive = computed(() => {
-    if (currentMatch.value?.status !== 'ongoing' || !activeRoundRecap.value) {
-        return false;
-    }
-
-    const yellowTotals = [
-        activeRoundRecap.value.jury_one_total_poin_yellow,
-        activeRoundRecap.value.jury_two_total_poin_yellow,
-        activeRoundRecap.value.jury_three_total_poin_yellow,
-        activeRoundRecap.value.jury_four_total_poin_yellow,
-    ];
-
-    const blueTotals = [
-        activeRoundRecap.value.jury_one_total_poin_blue,
-        activeRoundRecap.value.jury_two_total_poin_blue,
-        activeRoundRecap.value.jury_three_total_poin_blue,
-        activeRoundRecap.value.jury_four_total_poin_blue,
-    ];
-
-    return (
-        yellowTotals.filter((value) => Number(value) > 200).length >= 3 ||
-        blueTotals.filter((value) => Number(value) > 200).length >= 3
-    );
-});
-
-watch(isBuzzerActive, (active) => {
-    if (!buzzerAudio.value) {
-        return;
-    }
-
-    if (active) {
-        buzzerAudio.value
-            .play()
-            .catch((error) => console.error('Audio play failed:', error));
-
-        return;
-    }
-
-    buzzerAudio.value.pause();
-    buzzerAudio.value.currentTime = 0;
-});
-
 const getCornerStats = (cornerPoints: any[], roundNumbers = [1, 2, 3]) => {
     const stats: Record<string, number> = {
         '20': 0,
@@ -226,7 +204,7 @@ const getCornerStats = (cornerPoints: any[], roundNumbers = [1, 2, 3]) => {
 
     roundNumbers.forEach((roundNumber) => {
         const pointsArray = cornerPoints.filter(
-            (point: any) => point.round_number === roundNumber,
+            (point: any) => isSameRound(point.round_number, roundNumber),
         );
         const juryPointCounts: Record<number, Record<string, number>> = {
             1: {},
@@ -287,16 +265,21 @@ const getCornerStats = (cornerPoints: any[], roundNumbers = [1, 2, 3]) => {
                 const point = idToScore[id];
 
                 if (id.startsWith('s:')) {
-                    const scoreName = point.score?.name;
+                    const scoreName =
+                        point.score?.name ??
+                        scoreNameById[Number(point.ref_score_id)];
 
-                    if (stats[scoreName] !== undefined) {
+                    if (scoreName && stats[scoreName] !== undefined) {
                         stats[scoreName] += validCount;
                     }
                 } else if (id.startsWith('p:')) {
                     const punishmentValue =
                         point.punishment?.score !== undefined
                             ? Math.abs(Number(point.punishment.score))
-                            : Math.abs(
+                            : (punishmentScoreById[
+                                  Number(point.ref_punishment_id)
+                              ] ?? 0) ||
+                              Math.abs(
                                   parseInt(point.punishment?.name || '0') || 0,
                               );
 
@@ -394,6 +377,24 @@ const matchStats = computed(() => {
     };
 });
 
+const isMatchDone = computed(() => currentMatch.value?.status === 'done');
+
+const displayedBlueScore = computed(() => {
+    if (isMatchDone.value) {
+        return matchStats.value.totalPoinBlue;
+    }
+
+    return Number(activeRoundRecap.value?.total_poin_blue) || 0;
+});
+
+const displayedYellowScore = computed(() => {
+    if (isMatchDone.value) {
+        return matchStats.value.totalPoinYellow;
+    }
+
+    return Number(activeRoundRecap.value?.total_poin_yellow) || 0;
+});
+
 const currentRoundStats = computed(() => ({
     blueStats: getCornerStats(localBluePoints.value, [
         currentRoundNumber.value,
@@ -402,6 +403,69 @@ const currentRoundStats = computed(() => ({
         currentRoundNumber.value,
     ]),
 }));
+
+const displayedBlueStats = computed(() =>
+    isMatchDone.value
+        ? matchStats.value.blueStats
+        : currentRoundStats.value.blueStats,
+);
+
+const displayedYellowStats = computed(() =>
+    isMatchDone.value
+        ? matchStats.value.yellowStats
+        : currentRoundStats.value.yellowStats,
+);
+
+const timerElapsedMilliseconds = computed(() => {
+    let elapsed =
+        localTimer.value.elapsed_milliseconds ??
+        (Number(localTimer.value.elapsed_seconds) || 0) * 1000;
+
+    if (localTimer.value.status === 'running' && localTimer.value.started_at) {
+        elapsed += Math.max(
+            0,
+            timerNowTick.value -
+                (localTimer.value.started_at_milliseconds ??
+                    Date.parse(localTimer.value.started_at)),
+        );
+    }
+
+    return elapsed;
+});
+
+const timerDisplayMilliseconds = computed(() => {
+    if (localTimer.value.is_countdown) {
+        return Math.max(
+            0,
+            localTimer.value.second * 1000 - timerElapsedMilliseconds.value,
+        );
+    }
+
+    if (localTimer.value.is_autostop) {
+        return Math.min(
+            timerElapsedMilliseconds.value,
+            localTimer.value.second * 1000,
+        );
+    }
+
+    return timerElapsedMilliseconds.value;
+});
+
+const formattedTimer = computed(() => {
+    const safeMilliseconds = Math.max(
+        0,
+        Math.floor(timerDisplayMilliseconds.value),
+    );
+    const minutes = Math.floor(safeMilliseconds / 60000);
+    const seconds = Math.floor((safeMilliseconds % 60000) / 1000);
+    const milliseconds = safeMilliseconds % 1000;
+
+    return `${minutes.toString().padStart(2, '0')}:${seconds
+        .toString()
+        .padStart(2, '0')}:${milliseconds.toString().padStart(3, '0')}`;
+});
+
+const isTimerDisplayed = computed(() => Boolean(localTimer.value.is_display));
 
 const updateScoreDetail = (event: any) => {
     if (!isScoreEventForCurrentMatch(event)) {
@@ -430,16 +494,12 @@ const updateScoreDetail = (event: any) => {
 let echoStatusChannel: any = null;
 let echoScoreChannel: any = null;
 let echoTimerChannel: any = null;
+let timerTickInterval: ReturnType<typeof setInterval> | null = null;
 
 onMounted(() => {
-    buzzerAudio.value = new Audio('/assets/audio/buzzer.mp3');
-    buzzerAudio.value.loop = true;
-
-    if (isBuzzerActive.value) {
-        buzzerAudio.value
-            .play()
-            .catch((error) => console.error('Audio play failed:', error));
-    }
+    timerTickInterval = setInterval(() => {
+        timerNowTick.value = Date.now();
+    }, 25);
 
     const echo = (window as any).Echo;
 
@@ -455,19 +515,13 @@ onMounted(() => {
                     event.match,
                 );
 
-                currentMatch.value = event.match;
-
                 if (shouldReloadScores) {
-                    resetLocalScoreState();
-                    router.reload({
-                        only: [
-                            'activeMatch',
-                            'recapPoints',
-                            'yellowPoints',
-                            'bluePoints',
-                        ],
-                    });
+                    reloadScoreStateFromDatabase();
+
+                    return;
                 }
+
+                currentMatch.value = event.match;
             }
         });
 
@@ -485,9 +539,8 @@ onMounted(() => {
 });
 
 onUnmounted(() => {
-    if (buzzerAudio.value) {
-        buzzerAudio.value.pause();
-        buzzerAudio.value.currentTime = 0;
+    if (timerTickInterval) {
+        clearInterval(timerTickInterval);
     }
 
     const echo = (window as any).Echo;
@@ -548,7 +601,7 @@ const partaiLabel = computed(() => currentMatch.value?.match_code ?? '-');
     >
         <Transition name="broadcast-status" mode="out-in">
             <section
-                v-if="matchStatus === 'not_started'"
+                v-if="hasActiveMatch && matchStatus === 'not_started'"
                 key="not-started"
                 class="absolute inset-x-0 bottom-[6vh] flex justify-center px-5"
             >
@@ -639,23 +692,23 @@ const partaiLabel = computed(() => currentMatch.value?.match_code ?? '-');
             </section>
 
             <section
-                v-else-if="matchStatus === 'ongoing'"
+                v-else-if="hasActiveMatch && matchStatus === 'ongoing'"
                 key="ongoing"
-                class="absolute inset-x-0 bottom-[5.5vh] flex flex-col items-center gap-2 px-5"
+                class="absolute inset-x-0 bottom-[5vh] flex flex-col items-center gap-2 px-5"
             >
                 <div
                     class="overlay-topbar rounded-md border border-white/20 bg-black/90 px-5 py-1.5 text-xs font-black tracking-widest text-yellow-300 uppercase shadow-xl"
                 >
-                    Round {{ roundLabel }}
+                    {{ matchTitle || 'Tanding' }}
                 </div>
 
                 <div
-                    class="overlay-shell w-[min(86vw,1480px)] cursor-pointer overflow-hidden rounded-md border border-white/25 bg-black/80 shadow-2xl backdrop-blur-sm"
+                    class="overlay-shell w-[min(90vw,1560px)] cursor-pointer overflow-hidden rounded-md border border-white/25 bg-black/80 shadow-2xl backdrop-blur-sm"
                     :title="buttonTitle"
                     @click="triggerFullscreen"
                 >
                     <div
-                        class="grid h-20 grid-cols-[minmax(0,1.45fr)_11rem_minmax(0,1.45fr)] items-stretch"
+                        class="grid h-24 grid-cols-[minmax(0,1.45fr)_17rem_minmax(0,1.45fr)] items-stretch"
                     >
                         <div
                             class="overlay-blue flex min-w-0 items-center justify-end gap-5 bg-gradient-to-r from-blue-700 to-blue-600 px-5 text-right text-white"
@@ -684,22 +737,29 @@ const partaiLabel = computed(() => currentMatch.value?.match_code ?? '-');
                         </div>
 
                         <div
-                            class="overlay-center relative z-10 flex flex-col items-center justify-center gap-0.5 border-x border-white/15 bg-zinc-950/95 px-3 text-center shadow-[0_0_35px_rgba(0,0,0,0.55)]"
+                            class="overlay-center relative z-10 flex flex-col items-center justify-center gap-1 border-x border-white/15 bg-zinc-950/95 px-3 text-center shadow-[0_0_35px_rgba(0,0,0,0.55)]"
                         >
                             <div
-                                class="text-sm leading-tight font-black tracking-widest text-yellow-300 uppercase"
+                                class="text-xs leading-tight font-black tracking-widest text-yellow-300 uppercase"
                             >
                                 Partai {{ partaiLabel }}
                             </div>
                             <div
-                                class="text-[10px] font-black tracking-widest text-zinc-400 uppercase"
+                                v-if="isTimerDisplayed"
+                                class="overlay-score font-mono text-[clamp(1.45rem,2.45vw,2.55rem)] leading-none font-black tracking-wider text-white tabular-nums"
                             >
-                                Gelanggang
+                                {{ formattedTimer }}
                             </div>
                             <div
+                                v-else
                                 class="max-w-full text-[10px] leading-tight font-black break-words text-zinc-100 uppercase"
                             >
                                 {{ arenaDisplayName }}
+                            </div>
+                            <div
+                                class="text-xs leading-tight font-black tracking-widest text-zinc-400 uppercase"
+                            >
+                                Round {{ roundLabel }}
                             </div>
                         </div>
 
@@ -740,7 +800,7 @@ const partaiLabel = computed(() => currentMatch.value?.match_code ?? '-');
             </section>
 
             <article
-                v-else-if="matchStatus === 'paused'"
+                v-else-if="hasActiveMatch && matchStatus === 'paused'"
                 key="paused"
                 class="overlay-shell absolute inset-x-0 bottom-[5vh] mx-auto max-h-[88vh] w-[min(96vw,1620px)] cursor-pointer overflow-hidden rounded-md border border-white/25 bg-black/60 text-white shadow-2xl backdrop-blur-sm"
                 :title="buttonTitle"
@@ -771,7 +831,7 @@ const partaiLabel = computed(() => currentMatch.value?.match_code ?? '-');
                         <div
                             class="overlay-score shrink-0 text-6xl font-black text-white tabular-nums"
                         >
-                            {{ activeRoundRecap?.total_poin_blue || 0 }}
+                            {{ displayedBlueScore }}
                         </div>
                     </div>
 
@@ -801,7 +861,7 @@ const partaiLabel = computed(() => currentMatch.value?.match_code ?? '-');
                         <div
                             class="overlay-score shrink-0 text-6xl font-black text-black tabular-nums"
                         >
-                            {{ activeRoundRecap?.total_poin_yellow || 0 }}
+                            {{ displayedYellowScore }}
                         </div>
                         <div class="min-w-0 text-left">
                             <h2
@@ -922,7 +982,7 @@ const partaiLabel = computed(() => currentMatch.value?.match_code ?? '-');
             </article>
 
             <article
-                v-else
+                v-else-if="hasActiveMatch"
                 key="done"
                 class="overlay-shell absolute inset-x-0 bottom-[5vh] mx-auto max-h-[88vh] w-[min(96vw,1620px)] cursor-pointer overflow-hidden rounded-md border border-white/25 bg-black/60 text-white shadow-2xl backdrop-blur-sm"
                 :title="buttonTitle"
@@ -953,7 +1013,7 @@ const partaiLabel = computed(() => currentMatch.value?.match_code ?? '-');
                         <div
                             class="overlay-score shrink-0 text-6xl font-black tabular-nums drop-shadow-md"
                         >
-                            {{ matchStats.totalPoinBlue || 0 }}
+                            {{ displayedBlueScore }}
                         </div>
                     </div>
 
@@ -984,7 +1044,7 @@ const partaiLabel = computed(() => currentMatch.value?.match_code ?? '-');
                         <div
                             class="overlay-score shrink-0 text-6xl font-black tabular-nums drop-shadow-md"
                         >
-                            {{ matchStats.totalPoinYellow || 0 }}
+                            {{ displayedYellowScore }}
                         </div>
                         <div class="min-w-0 text-left">
                             <h2
@@ -1022,7 +1082,7 @@ const partaiLabel = computed(() => currentMatch.value?.match_code ?? '-');
                         <div
                             class="text-center text-3xl font-black text-blue-200 tabular-nums"
                         >
-                            {{ matchStats.blueStats[stat.score] }}
+                            {{ displayedBlueStats[stat.score] }}
                         </div>
                         <div
                             class="text-center text-lg font-black tracking-widest text-white uppercase"
@@ -1035,7 +1095,7 @@ const partaiLabel = computed(() => currentMatch.value?.match_code ?? '-');
                         <div
                             class="text-center text-3xl font-black text-yellow-300 tabular-nums"
                         >
-                            {{ matchStats.yellowStats[stat.score] }}
+                            {{ displayedYellowStats[stat.score] }}
                         </div>
                     </div>
 
@@ -1048,7 +1108,7 @@ const partaiLabel = computed(() => currentMatch.value?.match_code ?? '-');
                         <div
                             class="text-center text-3xl font-black text-red-300 tabular-nums"
                         >
-                            {{ matchStats.blueStats.punishmentPoints }}
+                            {{ displayedBlueStats.punishmentPoints }}
                         </div>
                         <div
                             class="text-center text-lg font-black tracking-widest text-red-200 uppercase"
@@ -1058,7 +1118,7 @@ const partaiLabel = computed(() => currentMatch.value?.match_code ?? '-');
                         <div
                             class="text-center text-3xl font-black text-red-300 tabular-nums"
                         >
-                            {{ matchStats.yellowStats.punishmentPoints }}
+                            {{ displayedYellowStats.punishmentPoints }}
                         </div>
                     </div>
 

@@ -3,7 +3,6 @@ import { Head, usePage, router } from '@inertiajs/vue3';
 import { computed, ref, onMounted, onUnmounted, watch } from 'vue';
 import FightFullscreenButton from '@/components/fight/FightFullscreenButton.vue';
 import FightWaitingState from '@/components/fight/FightWaitingState.vue';
-import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { useFullscreenLock } from '@/composables/useFullscreenLock';
 
@@ -31,12 +30,23 @@ const currentMatch = ref<any>(props.activeMatch ?? null);
 const localYellowPoints = ref<any[]>([...(props.yellowPoints || [])]);
 const localBluePoints = ref<any[]>([...(props.bluePoints || [])]);
 const localRecapPoints = ref<any[]>([...(props.recapPoints || [])]);
-
-const resetLocalScoreState = () => {
-    localYellowPoints.value = [];
-    localBluePoints.value = [];
-    localRecapPoints.value = [];
+const scoreNameById: Record<number, string> = {
+    1: '20',
+    2: '10+20',
+    3: '30',
+    4: '10+30',
+    5: '40',
+    6: '10+40',
+    7: '50',
 };
+const punishmentScoreById: Record<number, number> = {
+    1: 10,
+    2: 20,
+    3: 30,
+    4: 40,
+};
+
+const isSameRound = (left: any, right: any) => Number(left) === Number(right);
 
 const getMatchId = (match: any) => Number(match?.id ?? 0);
 
@@ -64,14 +74,34 @@ const shouldResetScoresForMatchUpdate = (updatedMatch: any) => {
         return false;
     }
 
+    if (!currentMatch.value) {
+        return true;
+    }
+
+    const statusChanged = currentMatch.value.status !== updatedMatch.status;
+    const shouldRefreshRecap = ['paused', 'done'].includes(updatedMatch.status);
+
     return (
-        isDifferentMatch(updatedMatch) || isStartingFromNotStarted(updatedMatch)
+        isDifferentMatch(updatedMatch) ||
+        isStartingFromNotStarted(updatedMatch) ||
+        currentMatch.value.round_number !== updatedMatch.round_number ||
+        (statusChanged && shouldRefreshRecap)
     );
+};
+
+const applyScoreStateFromProps = (pageProps: any) => {
+    localYellowPoints.value = [...(pageProps.yellowPoints || [])];
+    localBluePoints.value = [...(pageProps.bluePoints || [])];
+    localRecapPoints.value = [...(pageProps.recapPoints || [])];
+    currentMatch.value = pageProps.activeMatch ?? null;
 };
 
 const reloadScoreStateFromDatabase = () => {
     router.reload({
         only: ['activeMatch', 'recapPoints', 'yellowPoints', 'bluePoints'],
+        onSuccess: (page: any) => {
+            applyScoreStateFromProps(page.props);
+        },
     });
 };
 
@@ -85,39 +115,36 @@ const isScoreEventForCurrentMatch = (event: any) => {
 
 // Sync with Inertia props changes
 watch(
-    () => props.activeMatch,
-    (newVal) => {
-        currentMatch.value = newVal;
-    },
-    { deep: true },
-);
-watch(
-    () => props.yellowPoints,
-    (newVal) => {
-        localYellowPoints.value = [...(newVal || [])];
-    },
-    { deep: true },
-);
-watch(
-    () => props.bluePoints,
-    (newVal) => {
-        localBluePoints.value = [...(newVal || [])];
-    },
-    { deep: true },
-);
-watch(
-    () => props.recapPoints,
-    (newVal) => {
-        localRecapPoints.value = [...(newVal || [])];
+    () => [
+        props.activeMatch,
+        props.yellowPoints,
+        props.bluePoints,
+        props.recapPoints,
+    ],
+    ([activeMatch, yellowPoints, bluePoints, recapPoints]) => {
+        applyScoreStateFromProps({
+            activeMatch,
+            yellowPoints,
+            bluePoints,
+            recapPoints,
+        });
     },
     { deep: true },
 );
 
 const matchStatus = computed(() => {
-    if (!currentMatch.value) return 'not started';
-    if (currentMatch.value.status === 'ongoing') return 'ongoing';
-    if (['paused', 'done'].includes(currentMatch.value.status))
+    if (!currentMatch.value) {
+        return 'not started';
+    }
+
+    if (currentMatch.value.status === 'ongoing') {
+        return 'ongoing';
+    }
+
+    if (['paused', 'done'].includes(currentMatch.value.status)) {
         return 'done_paused';
+    }
+
     return 'not started';
 });
 
@@ -137,12 +164,13 @@ onMounted(() => {
                         e.match,
                     );
 
-                    currentMatch.value = e.match;
-
                     if (shouldResetScores) {
-                        resetLocalScoreState();
                         reloadScoreStateFromDatabase();
+
+                        return;
                     }
+
+                    currentMatch.value = e.match;
                 }
             });
 
@@ -156,6 +184,7 @@ onMounted(() => {
                 if (e.scoreDetail) {
                     if (e.scoreDetail.deleted) {
                         const targetId = Number(e.scoreDetail.id);
+
                         if (e.corner === 'yellow') {
                             localYellowPoints.value =
                                 localYellowPoints.value.filter(
@@ -177,9 +206,10 @@ onMounted(() => {
                 }
 
                 if (e.recap) {
-                    const idx = localRecapPoints.value.findIndex(
-                        (r) => r.round_number === e.recap.round_number,
+                    const idx = localRecapPoints.value.findIndex((r) =>
+                        isSameRound(r.round_number, e.recap.round_number),
                     );
+
                     if (idx !== -1) {
                         localRecapPoints.value.splice(idx, 1, e.recap);
                     } else {
@@ -192,10 +222,12 @@ onMounted(() => {
 
 onUnmounted(() => {
     const echo = (window as any).Echo;
+
     if (echoStatusChannel && echo) {
         echoStatusChannel.stopListening('.ActiveMatchUpdated');
         echo.leaveChannel('match.status');
     }
+
     if (echoScoreChannel && echo) {
         echoScoreChannel.stopListening('.JuryScoreUpdated');
         echo.leaveChannel('match.score');
@@ -203,11 +235,13 @@ onUnmounted(() => {
 });
 
 const activeRoundJuriesData = computed(() => {
-    if (!currentMatch.value) return [];
+    if (!currentMatch.value) {
+        return [];
+    }
 
     const roundNumber = currentMatch.value.round_number;
-    const roundDetails = localRecapPoints.value.find(
-        (r) => r.round_number === roundNumber,
+    const roundDetails = localRecapPoints.value.find((r) =>
+        isSameRound(r.round_number, roundNumber),
     );
     const jNumMap: Record<number, string> = {
         1: 'one',
@@ -228,11 +262,16 @@ const activeRoundJuriesData = computed(() => {
 
         pointsArray.forEach((p) => {
             const jn = p.jury_number;
+
             if (jn >= 1 && jn <= 4) {
                 const id = p.ref_score_id
                     ? `s:${p.ref_score_id}`
                     : `p:${p.ref_punishment_id}`;
-                if (!juryPointCounts[jn][id]) juryPointCounts[jn][id] = 0;
+
+                if (!juryPointCounts[jn][id]) {
+                    juryPointCounts[jn][id] = 0;
+                }
+
                 juryPointCounts[jn][id]++;
             }
         });
@@ -244,17 +283,26 @@ const activeRoundJuriesData = computed(() => {
 
         allIds.forEach((id) => {
             let maxOccurrences = 0;
+
             for (let j = 1; j <= 4; j++) {
                 const count = juryPointCounts[j][id] || 0;
-                if (count > maxOccurrences) maxOccurrences = count;
+
+                if (count > maxOccurrences) {
+                    maxOccurrences = count;
+                }
             }
 
             validCounts[id] = 0;
+
             for (let k = 1; k <= maxOccurrences; k++) {
                 let jCount = 0;
+
                 for (let j = 1; j <= 4; j++) {
-                    if ((juryPointCounts[j][id] || 0) >= k) jCount++;
+                    if ((juryPointCounts[j][id] || 0) >= k) {
+                        jCount++;
+                    }
                 }
+
                 if (jCount >= 3) {
                     validCounts[id]++;
                 }
@@ -267,28 +315,40 @@ const activeRoundJuriesData = computed(() => {
             3: {},
             4: {},
         };
+
         return pointsArray.map((p) => {
             const jn = p.jury_number;
+
             if (jn >= 1 && jn <= 4) {
                 const id = p.ref_score_id
                     ? `s:${p.ref_score_id}`
                     : `p:${p.ref_punishment_id}`;
-                if (!markedCounts[jn][id]) markedCounts[jn][id] = 0;
+
+                if (!markedCounts[jn][id]) {
+                    markedCounts[jn][id] = 0;
+                }
+
                 markedCounts[jn][id]++;
+
                 return {
                     ...p,
                     is_valid: markedCounts[jn][id] <= (validCounts[id] || 0),
                 };
             }
+
             return { ...p, is_valid: false };
         });
     };
 
     const evalYellow = evaluateValidity(
-        localYellowPoints.value.filter((p) => p.round_number === roundNumber),
+        localYellowPoints.value.filter((p) =>
+            isSameRound(p.round_number, roundNumber),
+        ),
     );
     const evalBlue = evaluateValidity(
-        localBluePoints.value.filter((p) => p.round_number === roundNumber),
+        localBluePoints.value.filter((p) =>
+            isSameRound(p.round_number, roundNumber),
+        ),
     );
 
     return [1, 2, 3, 4].map((juryNumber) => {
@@ -298,6 +358,7 @@ const activeRoundJuriesData = computed(() => {
         let yTotal = 0;
         let bTotal = 0;
         let juryWinner = 'draw';
+
         if (roundDetails) {
             const word = jNumMap[juryNumber];
             yTotal = roundDetails[`jury_${word}_total_poin_yellow`] ?? 0;
@@ -317,19 +378,127 @@ const activeRoundJuriesData = computed(() => {
 });
 
 const activeRoundRecap = computed(() => {
-    if (!currentMatch.value) return null;
-    return localRecapPoints.value.find(
-        (r) => r.round_number === currentMatch.value.round_number,
+    if (!currentMatch.value) {
+        return null;
+    }
+
+    return localRecapPoints.value.find((r) =>
+        isSameRound(r.round_number, currentMatch.value.round_number),
     );
 });
 
 const getRoundWinner = (roundNum: number) => {
-    if (!localRecapPoints.value || !Array.isArray(localRecapPoints.value))
+    if (!localRecapPoints.value || !Array.isArray(localRecapPoints.value)) {
         return null;
-    const r = localRecapPoints.value.find(
-        (x: any) => x.round_number == roundNum,
+    }
+
+    const r = localRecapPoints.value.find((x: any) =>
+        isSameRound(x.round_number, roundNum),
     );
+
     return r ? r.winner : null;
+};
+
+const getCornerStats = (cornerPoints: any[], roundNumbers = [1, 2, 3]) => {
+    const stats: Record<string, number> = {
+        '20': 0,
+        '10+20': 0,
+        '30': 0,
+        '10+30': 0,
+        '40': 0,
+        '10+40': 0,
+        '50': 0,
+        punishmentPoints: 0,
+    };
+
+    roundNumbers.forEach((roundNumber) => {
+        const pointsArray = cornerPoints.filter((point) =>
+            isSameRound(point.round_number, roundNumber),
+        );
+        const juryPointCounts: Record<number, Record<string, number>> = {
+            1: {},
+            2: {},
+            3: {},
+            4: {},
+        };
+        const idToScore: Record<string, any> = {};
+
+        pointsArray.forEach((point) => {
+            const juryNumber = point.jury_number;
+
+            if (juryNumber >= 1 && juryNumber <= 4) {
+                const id = point.ref_score_id
+                    ? `s:${point.ref_score_id}`
+                    : `p:${point.ref_punishment_id}`;
+                juryPointCounts[juryNumber][id] =
+                    (juryPointCounts[juryNumber][id] || 0) + 1;
+                idToScore[id] = point;
+            }
+        });
+
+        const allIds = new Set<string>();
+        [1, 2, 3, 4].forEach((juryNumber) =>
+            Object.keys(juryPointCounts[juryNumber]).forEach((key) =>
+                allIds.add(key),
+            ),
+        );
+
+        allIds.forEach((id) => {
+            let maxOccurrences = 0;
+
+            for (let juryNumber = 1; juryNumber <= 4; juryNumber++) {
+                maxOccurrences = Math.max(
+                    maxOccurrences,
+                    juryPointCounts[juryNumber][id] || 0,
+                );
+            }
+
+            let validCount = 0;
+
+            for (let index = 1; index <= maxOccurrences; index++) {
+                let juryCount = 0;
+
+                for (let juryNumber = 1; juryNumber <= 4; juryNumber++) {
+                    if ((juryPointCounts[juryNumber][id] || 0) >= index) {
+                        juryCount++;
+                    }
+                }
+
+                if (juryCount >= 3) {
+                    validCount++;
+                }
+            }
+
+            if (validCount > 0) {
+                const point = idToScore[id];
+
+                if (id.startsWith('s:')) {
+                    const scoreName =
+                        point.score?.name ??
+                        scoreNameById[Number(point.ref_score_id)];
+
+                    if (scoreName && stats[scoreName] !== undefined) {
+                        stats[scoreName] += validCount;
+                    }
+                } else if (id.startsWith('p:')) {
+                    const punishmentValue =
+                        point.punishment?.score !== undefined
+                            ? Math.abs(Number(point.punishment.score))
+                            : (punishmentScoreById[
+                                  Number(point.ref_punishment_id)
+                              ] ??
+                                  0) ||
+                              Math.abs(
+                                  parseInt(point.punishment?.name || '0') || 0,
+                              );
+
+                    stats.punishmentPoints += punishmentValue * validCount;
+                }
+            }
+        });
+    });
+
+    return stats;
 };
 
 const matchStats = computed(() => {
@@ -340,99 +509,18 @@ const matchStats = computed(() => {
 
     if (localRecapPoints.value) {
         localRecapPoints.value.forEach((r) => {
-            if (r.winner === 'blue') roundWinBlue++;
-            if (r.winner === 'yellow') roundWinYellow++;
+            if (r.winner === 'blue') {
+                roundWinBlue++;
+            }
+
+            if (r.winner === 'yellow') {
+                roundWinYellow++;
+            }
+
             totalPoinBlue += Number(r.total_poin_blue) || 0;
             totalPoinYellow += Number(r.total_poin_yellow) || 0;
         });
     }
-
-    const getCornerStats = (cornerPoints: any[]) => {
-        const stats: any = {
-            '20': 0,
-            '10+20': 0,
-            '30': 0,
-            '10+30': 0,
-            '40': 0,
-            '10+40': 0,
-            '50': 0,
-            punishmentPoints: 0,
-        };
-
-        const rounds = [1, 2, 3];
-        rounds.forEach((roundNumber) => {
-            const pointsArray = cornerPoints.filter(
-                (p) => p.round_number === roundNumber,
-            );
-            const juryPointCounts: Record<number, Record<string, number>> = {
-                1: {},
-                2: {},
-                3: {},
-                4: {},
-            };
-            const idToScore: Record<string, any> = {};
-
-            pointsArray.forEach((p) => {
-                const jn = p.jury_number;
-                if (jn >= 1 && jn <= 4) {
-                    const id = p.ref_score_id
-                        ? `s:${p.ref_score_id}`
-                        : `p:${p.ref_punishment_id}`;
-                    if (!juryPointCounts[jn][id]) juryPointCounts[jn][id] = 0;
-                    juryPointCounts[jn][id]++;
-                    idToScore[id] = p;
-                }
-            });
-
-            const allIds = new Set<string>();
-            [1, 2, 3, 4].forEach((j) =>
-                Object.keys(juryPointCounts[j]).forEach((k) => allIds.add(k)),
-            );
-
-            allIds.forEach((id) => {
-                let maxOccurrences = 0;
-                for (let j = 1; j <= 4; j++) {
-                    const count = juryPointCounts[j][id] || 0;
-                    if (count > maxOccurrences) maxOccurrences = count;
-                }
-
-                let validCount = 0;
-                for (let k = 1; k <= maxOccurrences; k++) {
-                    let jCount = 0;
-                    for (let j = 1; j <= 4; j++) {
-                        if ((juryPointCounts[j][id] || 0) >= k) jCount++;
-                    }
-                    if (jCount >= 3) validCount++;
-                }
-
-                if (validCount > 0) {
-                    const p = idToScore[id];
-                    if (id.startsWith('s:')) {
-                        const name = p.score?.name;
-                        if (stats[name] !== undefined) {
-                            stats[name] += validCount;
-                        } else if (name === '50') {
-                            stats['50'] += validCount;
-                        }
-                    } else if (id.startsWith('p:')) {
-                        let punishmentValue = 0;
-                        if (p.punishment?.score !== undefined) {
-                            punishmentValue = Math.abs(
-                                Number(p.punishment.score),
-                            );
-                        } else if (p.punishment?.name) {
-                            punishmentValue = Math.abs(
-                                parseInt(p.punishment.name) || 0,
-                            );
-                        }
-                        stats.punishmentPoints += punishmentValue * validCount;
-                    }
-                }
-            });
-        });
-
-        return stats;
-    };
 
     return {
         scoreRound: `${roundWinBlue} - ${roundWinYellow}`,
@@ -442,6 +530,16 @@ const matchStats = computed(() => {
         yellowStats: getCornerStats(localYellowPoints.value),
     };
 });
+
+const displayedBlueScore = computed(() => matchStats.value.totalPoinBlue);
+
+const displayedYellowScore = computed(() => matchStats.value.totalPoinYellow);
+
+const displayedBlueStats = computed(() => matchStats.value.blueStats);
+
+const displayedYellowStats = computed(() => matchStats.value.yellowStats);
+
+const displayedScoreRound = computed(() => matchStats.value.scoreRound);
 </script>
 
 <template>
@@ -543,7 +641,7 @@ const matchStats = computed(() => {
                         <div
                             class="pt-1 text-[5.5rem] leading-none font-black text-white tabular-nums drop-shadow-md"
                         >
-                            {{ matchStats.totalPoinBlue || 0 }}
+                            {{ displayedBlueScore }}
                         </div>
                     </div>
 
@@ -562,11 +660,11 @@ const matchStats = computed(() => {
                                 class="flex items-center gap-3 text-5xl leading-none font-black text-white not-italic"
                             >
                                 <span class="text-blue-500">{{
-                                    matchStats.scoreRound.split(' - ')[0]
+                                    displayedScoreRound.split(' - ')[0]
                                 }}</span>
                                 <span class="text-3xl text-stone-700">-</span>
                                 <span class="text-yellow-500">{{
-                                    matchStats.scoreRound.split(' - ')[1]
+                                    displayedScoreRound.split(' - ')[1]
                                 }}</span>
                             </div>
                         </div>
@@ -579,7 +677,7 @@ const matchStats = computed(() => {
                         <div
                             class="pt-1 text-[5.5rem] leading-none font-black text-black tabular-nums drop-shadow-md"
                         >
-                            {{ matchStats.totalPoinYellow || 0 }}
+                            {{ displayedYellowScore }}
                         </div>
                         <div
                             class="flex max-w-[70%] flex-col items-end text-right"
@@ -655,7 +753,7 @@ const matchStats = computed(() => {
                                     <div class="flex h-full w-1/2 justify-end">
                                         <div
                                             class="h-full bg-blue-500 transition-all duration-1000 ease-out"
-                                            :style="`width: ${(parseInt(matchStats.blueStats[stat.score]) || 0) + (parseInt(matchStats.yellowStats[stat.score]) || 0) > 0 ? (parseInt(matchStats.blueStats[stat.score]) / ((parseInt(matchStats.blueStats[stat.score]) || 0) + (parseInt(matchStats.yellowStats[stat.score]) || 0))) * 100 : 0}%`"
+                                            :style="`width: ${(displayedBlueStats[stat.score] || 0) + (displayedYellowStats[stat.score] || 0) > 0 ? ((displayedBlueStats[stat.score] || 0) / ((displayedBlueStats[stat.score] || 0) + (displayedYellowStats[stat.score] || 0))) * 100 : 0}%`"
                                         ></div>
                                     </div>
                                     <div
@@ -663,14 +761,14 @@ const matchStats = computed(() => {
                                     >
                                         <div
                                             class="h-full bg-yellow-500 transition-all duration-1000 ease-out"
-                                            :style="`width: ${(parseInt(matchStats.blueStats[stat.score]) || 0) + (parseInt(matchStats.yellowStats[stat.score]) || 0) > 0 ? (parseInt(matchStats.yellowStats[stat.score]) / ((parseInt(matchStats.blueStats[stat.score]) || 0) + (parseInt(matchStats.yellowStats[stat.score]) || 0))) * 100 : 0}%`"
+                                            :style="`width: ${(displayedBlueStats[stat.score] || 0) + (displayedYellowStats[stat.score] || 0) > 0 ? ((displayedYellowStats[stat.score] || 0) / ((displayedBlueStats[stat.score] || 0) + (displayedYellowStats[stat.score] || 0))) * 100 : 0}%`"
                                         ></div>
                                     </div>
                                 </div>
                                 <div
                                     class="z-10 text-center text-2xl font-black text-blue-400 tabular-nums"
                                 >
-                                    {{ matchStats.blueStats[stat.score] }}
+                                    {{ displayedBlueStats[stat.score] }}
                                 </div>
                                 <div
                                     class="z-10 text-center text-xl font-black tracking-widest text-white uppercase drop-shadow-md"
@@ -683,7 +781,7 @@ const matchStats = computed(() => {
                                 <div
                                     class="z-10 text-center text-2xl font-black text-yellow-400 tabular-nums"
                                 >
-                                    {{ matchStats.yellowStats[stat.score] }}
+                                    {{ displayedYellowStats[stat.score] }}
                                 </div>
                             </div>
                         </template>
@@ -698,20 +796,20 @@ const matchStats = computed(() => {
                                 <div class="flex h-full w-1/2 justify-end">
                                     <div
                                         class="h-full bg-red-500 transition-all duration-1000 ease-out"
-                                        :style="`width: ${(parseInt(matchStats.blueStats.punishmentPoints) || 0) + (parseInt(matchStats.yellowStats.punishmentPoints) || 0) > 0 ? (parseInt(matchStats.blueStats.punishmentPoints) / ((parseInt(matchStats.blueStats.punishmentPoints) || 0) + (parseInt(matchStats.yellowStats.punishmentPoints) || 0))) * 100 : 0}%`"
+                                        :style="`width: ${(displayedBlueStats.punishmentPoints || 0) + (displayedYellowStats.punishmentPoints || 0) > 0 ? ((displayedBlueStats.punishmentPoints || 0) / ((displayedBlueStats.punishmentPoints || 0) + (displayedYellowStats.punishmentPoints || 0))) * 100 : 0}%`"
                                     ></div>
                                 </div>
                                 <div class="flex h-full w-1/2 justify-start">
                                     <div
                                         class="h-full bg-red-500 transition-all duration-1000 ease-out"
-                                        :style="`width: ${(parseInt(matchStats.blueStats.punishmentPoints) || 0) + (parseInt(matchStats.yellowStats.punishmentPoints) || 0) > 0 ? (parseInt(matchStats.yellowStats.punishmentPoints) / ((parseInt(matchStats.blueStats.punishmentPoints) || 0) + (parseInt(matchStats.yellowStats.punishmentPoints) || 0))) * 100 : 0}%`"
+                                        :style="`width: ${(displayedBlueStats.punishmentPoints || 0) + (displayedYellowStats.punishmentPoints || 0) > 0 ? ((displayedYellowStats.punishmentPoints || 0) / ((displayedBlueStats.punishmentPoints || 0) + (displayedYellowStats.punishmentPoints || 0))) * 100 : 0}%`"
                                     ></div>
                                 </div>
                             </div>
                             <div
                                 class="z-10 text-center text-3xl font-black text-red-500 tabular-nums"
                             >
-                                {{ matchStats.blueStats.punishmentPoints }}
+                                {{ displayedBlueStats.punishmentPoints }}
                             </div>
                             <div
                                 class="z-10 text-center text-xl font-black tracking-widest text-red-500/80 uppercase"
@@ -721,7 +819,7 @@ const matchStats = computed(() => {
                             <div
                                 class="z-10 text-center text-3xl font-black text-red-500 tabular-nums"
                             >
-                                {{ matchStats.yellowStats.punishmentPoints }}
+                                {{ displayedYellowStats.punishmentPoints }}
                             </div>
                         </div>
 

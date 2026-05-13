@@ -1387,9 +1387,9 @@ class SeniMatchControlTest extends TestCase
             ->assertOk()
             ->assertJsonPath('score.jury_number', 2)
             ->assertJsonPath('score.wiraga', '56.000')
-            ->assertJsonPath('score.wirasa', '20.000')
-            ->assertJsonPath('score.wirama', '10.000')
-            ->assertJsonPath('score.total_score', '86.000');
+            ->assertJsonPath('score.wirasa', '0.000')
+            ->assertJsonPath('score.wirama', '0.000')
+            ->assertJsonPath('score.total_score', '56.000');
 
         $this
             ->actingAs($user)
@@ -1400,16 +1400,16 @@ class SeniMatchControlTest extends TestCase
                 'value' => 5,
             ])
             ->assertOk()
-            ->assertJsonPath('score.total_score', '81.000')
+            ->assertJsonPath('score.total_score', '51.000')
             ->assertJsonPath('punishment.keluar_garis', '5.000');
 
         $this->assertDatabaseHas('seni_jury_scores', [
             'seni_single_match_id' => $match->id,
             'jury_number' => 2,
             'wiraga' => '56.000',
-            'wirasa' => '20.000',
-            'wirama' => '10.000',
-            'total_score' => '81.000',
+            'wirasa' => '0.000',
+            'wirama' => '0.000',
+            'total_score' => '51.000',
         ]);
         $this->assertDatabaseHas('seni_jury_punishments', [
             'seni_single_match_id' => $match->id,
@@ -1423,7 +1423,7 @@ class SeniMatchControlTest extends TestCase
                 && $event->juryNumber === 2
                 && $event->field === 'keluar_garis'
                 && $event->type === 'punishment'
-                && $event->score['total_score'] === '81.000',
+                && $event->score['total_score'] === '51.000',
         );
     }
 
@@ -1462,15 +1462,15 @@ class SeniMatchControlTest extends TestCase
             ->assertOk()
             ->assertJsonPath('score.jury_number', 5)
             ->assertJsonPath('score.wiraga', '58.000')
-            ->assertJsonPath('score.total_score', '88.000');
+            ->assertJsonPath('score.total_score', '58.000');
 
         $this->assertDatabaseHas('seni_jury_scores', [
             'seni_single_match_id' => $match->id,
             'jury_number' => 5,
             'wiraga' => '58.000',
-            'wirasa' => '20.000',
-            'wirama' => '10.000',
-            'total_score' => '88.000',
+            'wirasa' => '0.000',
+            'wirama' => '0.000',
+            'total_score' => '58.000',
         ]);
 
         Event::assertDispatched(
@@ -1479,7 +1479,7 @@ class SeniMatchControlTest extends TestCase
                 && $event->juryNumber === 5
                 && $event->field === 'wiraga'
                 && $event->type === 'score'
-                && $event->score['total_score'] === '88.000',
+                && $event->score['total_score'] === '58.000',
         );
     }
 
@@ -1534,24 +1534,24 @@ class SeniMatchControlTest extends TestCase
                 'value' => 80,
             ])
             ->assertOk()
-            ->assertJsonPath('data.total_score', '270.000')
-            ->assertJsonPath('data.total_wiraga', '180.000')
-            ->assertJsonPath('data.total_wirasa', '60.000')
-            ->assertJsonPath('data.total_wirama', '30.000')
-            ->assertJsonPath('data.total_punishment', '6.000')
+            ->assertJsonPath('data.total_score', '250.000')
+            ->assertJsonPath('data.total_wiraga', '190.000')
+            ->assertJsonPath('data.total_wirasa', '40.000')
+            ->assertJsonPath('data.total_wirama', '20.000')
+            ->assertJsonPath('data.total_punishment', '3.000')
             ->assertJsonPath('data.jury_scores.0.is_accepted', false)
             ->assertJsonPath('data.jury_scores.1.is_accepted', true)
             ->assertJsonPath('data.jury_scores.2.is_accepted', true)
-            ->assertJsonPath('data.jury_scores.3.is_accepted', true)
-            ->assertJsonPath('data.jury_scores.4.is_accepted', false);
+            ->assertJsonPath('data.jury_scores.3.is_accepted', false)
+            ->assertJsonPath('data.jury_scores.4.is_accepted', true);
 
         $this->assertDatabaseHas('seni_single_matches', [
             'id' => $match->id,
-            'total_score' => '270.000',
-            'total_wiraga' => '180.000',
-            'total_wirasa' => '60.000',
-            'total_wirama' => '30.000',
-            'total_punishment' => '6.000',
+            'total_score' => '250.000',
+            'total_wiraga' => '190.000',
+            'total_wirasa' => '40.000',
+            'total_wirama' => '20.000',
+            'total_punishment' => '3.000',
         ]);
         $this->assertDatabaseHas('seni_jury_scores', [
             'seni_single_match_id' => $match->id,
@@ -1566,15 +1566,15 @@ class SeniMatchControlTest extends TestCase
         $this->assertDatabaseHas('seni_jury_scores', [
             'seni_single_match_id' => $match->id,
             'jury_number' => 5,
-            'is_accepted' => false,
+            'is_accepted' => true,
         ]);
 
         Event::assertDispatched(
             SeniJuryScoreUpdated::class,
-            fn (SeniJuryScoreUpdated $event): bool => $event->match['total_score'] === '270.000'
-                && $event->match['total_punishment'] === '6.000'
+            fn (SeniJuryScoreUpdated $event): bool => $event->match['total_score'] === '250.000'
+                && $event->match['total_punishment'] === '3.000'
                 && $event->match['jury_scores'][1]['is_accepted'] === true
-                && $event->match['jury_scores'][4]['is_accepted'] === false,
+                && $event->match['jury_scores'][4]['is_accepted'] === true,
         );
     }
 
@@ -1629,30 +1629,30 @@ class SeniMatchControlTest extends TestCase
                 'value' => 50,
             ])
             ->assertOk()
-            ->assertJsonPath('data.total_score', '300.000')
-            ->assertJsonPath('data.total_kualitas_teknik', '90.000')
+            ->assertJsonPath('data.total_score', '270.000')
+            ->assertJsonPath('data.total_kualitas_teknik', '60.000')
             ->assertJsonPath('data.total_kuantitas_teknik', '60.000')
             ->assertJsonPath('data.total_ketangkasan', '60.000')
             ->assertJsonPath('data.total_stamina', '30.000')
             ->assertJsonPath('data.total_kemantapan', '30.000')
             ->assertJsonPath('data.total_musik', '30.000')
-            ->assertJsonPath('data.total_punishment', '6.000')
-            ->assertJsonPath('data.jury_scores.0.is_accepted', false)
+            ->assertJsonPath('data.total_punishment', '8.000')
+            ->assertJsonPath('data.jury_scores.0.is_accepted', true)
             ->assertJsonPath('data.jury_scores.1.is_accepted', true)
             ->assertJsonPath('data.jury_scores.2.is_accepted', true)
-            ->assertJsonPath('data.jury_scores.3.is_accepted', true)
+            ->assertJsonPath('data.jury_scores.3.is_accepted', false)
             ->assertJsonPath('data.jury_scores.4.is_accepted', false);
 
         $this->assertDatabaseHas('seni_single_matches', [
             'id' => $match->id,
-            'total_score' => '300.000',
-            'total_kualitas_teknik' => '90.000',
+            'total_score' => '270.000',
+            'total_kualitas_teknik' => '60.000',
             'total_kuantitas_teknik' => '60.000',
             'total_ketangkasan' => '60.000',
             'total_stamina' => '30.000',
             'total_kemantapan' => '30.000',
             'total_musik' => '30.000',
-            'total_punishment' => '6.000',
+            'total_punishment' => '8.000',
         ]);
     }
 
