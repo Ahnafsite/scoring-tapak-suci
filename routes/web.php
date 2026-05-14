@@ -141,6 +141,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
         $rankedMatches = SeniSingleMatch::query()
             ->when(
                 SeniSingleMatch::exists()
+                && SeniSingleMatch::where('status', '!=', 'done')->doesntExist()
                 && SeniSingleMatch::whereNull('rank')->doesntExist(),
                 fn ($query) => $query->orderBy('no_order')->orderBy('atletes'),
                 fn ($query) => $query->whereRaw('1 = 0')

@@ -256,7 +256,7 @@ class SeniStreamingAccessTest extends TestCase
             );
     }
 
-    public function test_seni_streaming_online_receives_winner_rows_when_all_matches_are_ranked_before_all_are_done(): void
+    public function test_seni_streaming_online_hides_winner_rows_when_ranked_match_is_restarted(): void
     {
         $streamer = Role::create(['name' => 'Streamer']);
         $user = User::factory()->create(['role_id' => $streamer->id]);
@@ -270,7 +270,7 @@ class SeniStreamingAccessTest extends TestCase
             'type' => 'tunggal',
             'category' => 'Tunggal',
             'group' => 'Putri',
-            'status' => 'paused',
+            'status' => 'ongoing',
             'is_active' => true,
             'is_passed' => true,
             'round_match' => 'Final',
@@ -303,10 +303,8 @@ class SeniStreamingAccessTest extends TestCase
             ->assertInertia(fn (Assert $page) => $page
                 ->component('SeniStreamingOnline')
                 ->where('activeMatch.id', $activeMatch->id)
-                ->where('activeMatch.status', 'paused')
-                ->has('rankedMatches', 2)
-                ->where('rankedMatches.0.rank', 1)
-                ->where('rankedMatches.1.rank', 2)
+                ->where('activeMatch.status', 'ongoing')
+                ->has('rankedMatches', 0)
             );
     }
 

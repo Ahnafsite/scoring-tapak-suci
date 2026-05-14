@@ -152,7 +152,12 @@ const isWaiting = computed(() => {
     );
 });
 
-const shouldShowWinnerTable = computed(() => rankedMatches.value.length > 0);
+const shouldShowWinnerTable = computed(() => {
+    return (
+        rankedMatches.value.length > 0 &&
+        currentMatch.value?.status !== 'ongoing'
+    );
+});
 
 const isTechniqueMatch = (match: SeniMatch | null | undefined) => {
     const matchText = [match?.type, match?.category, match?.group]
@@ -523,22 +528,32 @@ const shouldReloadScoreStateFromDatabase = (
         return true;
     }
 
+    const isStartingMatch =
+        ['not_started', 'done'].includes(currentMatch.value.status) &&
+        updatedMatch.status === 'ongoing';
+
     return (
         getMatchId(currentMatch.value) !== getMatchId(updatedMatch) ||
-        (currentMatch.value.status === 'not_started' &&
-            updatedMatch.status === 'ongoing')
+        isStartingMatch
     );
+};
+
+const syncScoreStateFromPage = (page: any) => {
+    currentMatch.value = (page.props.activeMatch ?? null) as SeniMatch | null;
+    rankedMatches.value = (page.props.rankedMatches ?? []) as SeniMatch[];
 };
 
 const reloadScoreStateFromDatabase = () => {
     router.reload({
         only: ['activeMatch', 'rankedMatches'],
+        onSuccess: syncScoreStateFromPage,
     });
 };
 
 const reloadWinnerTableFromDatabase = () => {
     router.reload({
         only: ['activeMatch', 'rankedMatches'],
+        onSuccess: syncScoreStateFromPage,
     });
 };
 

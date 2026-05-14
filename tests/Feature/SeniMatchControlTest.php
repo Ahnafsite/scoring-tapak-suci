@@ -6,6 +6,8 @@ use App\Events\SeniJuryScoreUpdated;
 use App\Events\SeniMatchUpdated;
 use App\Models\Arena;
 use App\Models\Role;
+use App\Models\SeniJuryPunishment;
+use App\Models\SeniJuryScore;
 use App\Models\SeniPool;
 use App\Models\SeniSingleMatch;
 use App\Models\User;
@@ -360,6 +362,188 @@ class SeniMatchControlTest extends TestCase
         $this->assertDatabaseCount('seni_jury_punishments', 2);
 
         Http::assertSent(fn ($request) => str_contains($request->url(), '/partai-seni/detail-partai-seni-ts/3410'));
+    }
+
+    public function test_switching_active_match_replaces_current_jury_score_tables_from_source_detail(): void
+    {
+        Http::fake([
+            '*/partai-seni/detail-partai-seni-ts/3411' => Http::response([
+                'status' => 'success',
+                'data' => [
+                    'total_score' => '222.000',
+                    'total_punishment' => '0.000',
+                    'time' => 120,
+                    'tgr_jury_scores' => [
+                        ['jury_number' => 3, 'wiraga' => 60, 'wirasa' => 55, 'wirama' => 50],
+                    ],
+                    'tgr_jury_punishments' => [
+                        [
+                            'jury_number' => 3,
+                            'waktu' => 0,
+                            'keluar_garis' => 0,
+                            'senjata_jatuh_atau_tidak_sesuai_deskripsi' => 0,
+                            'akeseoris_jatuh' => 0,
+                        ],
+                    ],
+                    'tgr_jury_total_scores' => [
+                        ['jury_number' => 3, 'total_score' => 165, 'is_accepted' => 1],
+                    ],
+                ],
+            ], 200),
+        ]);
+
+        $operator = Role::create(['name' => 'Operator']);
+        $user = User::factory()->create(['role_id' => $operator->id]);
+        SeniPool::create([
+            'no_pool_babak_id' => 55,
+            'round_match' => 'Final',
+            'group' => 'Putra',
+            'category' => 'Tunggal',
+            'no_pool' => 'A',
+        ]);
+        $previousMatch = SeniSingleMatch::create([
+            'no_pool_babak_id' => 55,
+            'bkp_id' => 3410,
+            'matches_code' => '135',
+            'atletes' => 'Atlet A',
+            'contingent' => 'Kontingen A',
+            'type' => 'tunggal',
+            'category' => 'Tunggal',
+            'group' => 'Putra',
+            'status' => 'done',
+            'round_match' => 'Final',
+            'no_order' => 1,
+        ]);
+        $nextMatch = SeniSingleMatch::create([
+            'no_pool_babak_id' => 55,
+            'bkp_id' => 3411,
+            'matches_code' => '136',
+            'atletes' => 'Atlet B',
+            'contingent' => 'Kontingen B',
+            'type' => 'tunggal',
+            'category' => 'Tunggal',
+            'group' => 'Putra',
+            'status' => 'not_started',
+            'round_match' => 'Final',
+            'no_order' => 2,
+        ]);
+
+        $previousMatch->juryScores()->create([
+            'jury_number' => 1,
+            'wiraga' => 40,
+            'wirasa' => 30,
+            'wirama' => 20,
+            'total_score' => 90,
+            'is_accepted' => true,
+        ]);
+        $previousMatch->juryPunishments()->create([
+            'jury_number' => 1,
+            'waktu' => 0,
+            'keluar_garis' => 1,
+            'senjata_jatuh_atau_tidak_sesuai_deskripsi' => 0,
+            'akeseoris_jatuh' => 0,
+        ]);
+
+        $this
+            ->actingAs($user)
+            ->postJson("/api/seni/matches/{$nextMatch->id}/activate")
+            ->assertOk()
+            ->assertJsonPath('data.id', $nextMatch->id)
+            ->assertJsonPath('jury_scores.0.jury_number', 3)
+            ->assertJsonPath('jury_punishments.0.jury_number', 3);
+
+        $this->assertDatabaseCount('seni_single_matches', 2);
+        $this->assertDatabaseCount('seni_jury_scores', 1);
+        $this->assertDatabaseCount('seni_jury_punishments', 1);
+        $this->assertDatabaseMissing('seni_jury_scores', [
+            'seni_single_match_id' => $previousMatch->id,
+        ]);
+        $this->assertDatabaseMissing('seni_jury_punishments', [
+            'seni_single_match_id' => $previousMatch->id,
+        ]);
+        $this->assertDatabaseHas('seni_jury_scores', [
+            'seni_single_match_id' => $nextMatch->id,
+            'jury_number' => 3,
+            'wiraga' => '60.000',
+            'wirasa' => '55.000',
+            'wirama' => '50.000',
+            'total_score' => '165.000',
+            'is_accepted' => true,
+        ]);
+        $this->assertDatabaseHas('seni_jury_punishments', [
+            'seni_single_match_id' => $nextMatch->id,
+            'jury_number' => 3,
+            'keluar_garis' => '0.000',
+        ]);
+
+        $this->assertSame(1, SeniJuryScore::whereBelongsTo($nextMatch, 'match')->count());
+        $this->assertSame(1, SeniJuryPunishment::whereBelongsTo($nextMatch, 'match')->count());
+    }
+
+    public function test_restarting_done_match_returns_current_database_jury_scores(): void
+    {
+        Http::fake([
+            '*' => Http::response(['success' => true], 200),
+        ]);
+
+        $operator = Role::create(['name' => 'Operator']);
+        $user = User::factory()->create(['role_id' => $operator->id]);
+        SeniPool::create([
+            'no_pool_babak_id' => 55,
+            'round_match' => 'Final',
+            'group' => 'Putra',
+            'category' => 'Tunggal',
+            'no_pool' => 'A',
+        ]);
+        $match = SeniSingleMatch::create([
+            'no_pool_babak_id' => 55,
+            'bkp_id' => 3410,
+            'matches_code' => '135',
+            'atletes' => 'Atlet A',
+            'contingent' => 'Kontingen A',
+            'type' => 'tunggal',
+            'category' => 'Tunggal',
+            'group' => 'Putra',
+            'status' => 'done',
+            'is_active' => true,
+            'round_match' => 'Final',
+            'no_order' => 1,
+            'total_score' => 150,
+        ]);
+
+        $match->juryScores()->create([
+            'jury_number' => 2,
+            'wiraga' => 60,
+            'wirasa' => 50,
+            'wirama' => 40,
+            'total_score' => 150,
+            'is_accepted' => true,
+        ]);
+        $match->juryPunishments()->create([
+            'jury_number' => 2,
+            'waktu' => 0,
+            'keluar_garis' => 5,
+            'senjata_jatuh_atau_tidak_sesuai_deskripsi' => 0,
+            'akeseoris_jatuh' => 0,
+        ]);
+
+        $this
+            ->actingAs($user)
+            ->postJson("/api/seni/matches/{$match->id}/status", [
+                'status' => 'ongoing',
+            ])
+            ->assertOk()
+            ->assertJsonPath('data.id', $match->id)
+            ->assertJsonPath('data.status', 'ongoing')
+            ->assertJsonPath('data.jury_scores.0.jury_number', 2)
+            ->assertJsonPath('data.jury_scores.0.wiraga', '60.000')
+            ->assertJsonPath('data.jury_scores.0.total_score', '150.000')
+            ->assertJsonPath('data.jury_punishments.0.jury_number', 2)
+            ->assertJsonPath('data.jury_punishments.0.keluar_garis', '5.000');
+
+        $this->assertDatabaseCount('seni_jury_scores', 1);
+        $this->assertDatabaseCount('seni_jury_punishments', 1);
+        Http::assertNotSent(fn ($request) => str_contains($request->url(), '/detail-partai-seni-ts/'));
     }
 
     public function test_activate_ganda_match_maps_technique_score_format(): void

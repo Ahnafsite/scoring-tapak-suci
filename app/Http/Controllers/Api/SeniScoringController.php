@@ -6,6 +6,8 @@ use App\Events\SeniJuryScoreUpdated;
 use App\Events\SeniMatchUpdated;
 use App\Http\Controllers\Controller;
 use App\Models\Arena;
+use App\Models\SeniJuryPunishment;
+use App\Models\SeniJuryScore;
 use App\Models\SeniPool;
 use App\Models\SeniSingleMatch;
 use Illuminate\Http\Client\Response;
@@ -175,8 +177,8 @@ class SeniScoringController extends Controller
                 ['is_active' => true]
             ));
 
-            $match->juryScores()->delete();
-            $match->juryPunishments()->delete();
+            SeniJuryScore::query()->delete();
+            SeniJuryPunishment::query()->delete();
 
             foreach ($this->mapJuryScores($detail) as $juryScore) {
                 $match->juryScores()->create($juryScore);

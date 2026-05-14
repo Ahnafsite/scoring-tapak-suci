@@ -19,43 +19,32 @@ import {
 } from '@/actions/App/Http/Controllers/TimerController';
 import { Button } from '@/components/ui/button';
 import { Toaster } from '@/components/ui/sonner';
+import {
+    useSyncedTimer,
+    type SyncedTimerState,
+} from '@/composables/useSyncedTimer';
 import { logout } from '@/routes';
 
-type TimerState = {
+type TimerState = SyncedTimerState & {
     id: number | null;
     is_display: boolean;
-    started_at: string | null;
-    started_at_milliseconds?: number | null;
-    status: 'running' | 'paused' | 'stopped';
     stored_status?: 'running' | 'paused' | 'stopped';
-    is_countdown: boolean;
-    second: number;
-    is_autostop: boolean;
-    elapsed_seconds: number;
-    elapsed_milliseconds?: number;
-    display_seconds: number;
-    display_milliseconds?: number;
-    server_now?: string | null;
 };
 
 const props = defineProps<{
     timer: TimerState;
 }>();
 
-const performanceNow = () =>
-    typeof performance === 'undefined' ? Date.now() : performance.now();
-
-const timer = ref<TimerState>({ ...props.timer });
-const initialServerNow = Date.parse(props.timer.server_now ?? '');
-const syncedServerNow = ref(
-    Number.isFinite(initialServerNow) ? initialServerNow : Date.now(),
-);
-const syncedClientNow = ref(performanceNow());
-const nowTick = ref(syncedServerNow.value);
+const {
+    displayMilliseconds,
+    elapsedMilliseconds,
+    formatTimerDuration,
+    localTimer: timer,
+    syncTimer,
+} = useSyncedTimer(props.timer);
 const isSaving = ref(false);
 const customMinutes = ref(Math.floor((props.timer.second ?? 120) / 60));
 const customSeconds = ref((props.timer.second ?? 120) % 60);
-let tickInterval: ReturnType<typeof setInterval> | null = null;
 let echoTimerChannel: any = null;
 
 const durationOptions = [
@@ -68,44 +57,6 @@ const durationOptions = [
 const handleLogout = () => {
     router.flushAll();
 };
-
-const elapsedMilliseconds = computed(() => {
-    let elapsed =
-        timer.value.elapsed_milliseconds ??
-        (Number(timer.value.elapsed_seconds) || 0) * 1000;
-
-    if (timer.value.status === 'running') {
-        const serverNow = Date.parse(timer.value.server_now ?? '');
-
-        if (Number.isFinite(serverNow)) {
-            elapsed += Math.max(0, nowTick.value - serverNow);
-        } else if (timer.value.started_at) {
-            elapsed += Math.max(
-                0,
-                nowTick.value -
-                    (timer.value.started_at_milliseconds ??
-                        Date.parse(timer.value.started_at)),
-            );
-        }
-    }
-
-    return elapsed;
-});
-
-const displayMilliseconds = computed(() => {
-    if (timer.value.is_countdown) {
-        return Math.max(
-            0,
-            timer.value.second * 1000 - elapsedMilliseconds.value,
-        );
-    }
-
-    if (timer.value.is_autostop) {
-        return Math.min(elapsedMilliseconds.value, timer.value.second * 1000);
-    }
-
-    return elapsedMilliseconds.value;
-});
 
 const displayStatus = computed(() => {
     if (timer.value.status !== 'running') {
@@ -144,34 +95,6 @@ const statusLabel = computed(() => {
 });
 
 const isRunning = computed(() => displayStatus.value === 'running');
-
-const formatDuration = (millisecondsValue: number) => {
-    const safeMilliseconds = Math.max(0, Math.floor(millisecondsValue));
-    const minutes = Math.floor(safeMilliseconds / 60000);
-    const remainingSeconds = Math.floor((safeMilliseconds % 60000) / 1000);
-    const milliseconds = safeMilliseconds % 1000;
-
-    return `${minutes.toString().padStart(2, '0')}:${remainingSeconds
-        .toString()
-        .padStart(2, '0')}:${milliseconds.toString().padStart(3, '0')}`;
-};
-
-const updateServerClock = (nextTimer: TimerState) => {
-    const serverNow = Date.parse(nextTimer.server_now ?? '');
-
-    if (!Number.isFinite(serverNow)) {
-        return;
-    }
-
-    syncedServerNow.value = serverNow;
-    syncedClientNow.value = performanceNow();
-    nowTick.value = serverNow;
-};
-
-const syncTimer = (nextTimer: TimerState) => {
-    updateServerClock(nextTimer);
-    timer.value = { ...timer.value, ...nextTimer };
-};
 
 const saveConfig = async (payload: Partial<TimerState>) => {
     isSaving.value = true;
@@ -224,11 +147,6 @@ watch(
 );
 
 onMounted(() => {
-    tickInterval = setInterval(() => {
-        nowTick.value =
-            syncedServerNow.value + (performanceNow() - syncedClientNow.value);
-    }, 25);
-
     const echo = (window as any).Echo;
 
     if (!echo) {
@@ -245,10 +163,6 @@ onMounted(() => {
 });
 
 onUnmounted(() => {
-    if (tickInterval) {
-        clearInterval(tickInterval);
-    }
-
     const echo = (window as any).Echo;
 
     if (!echo || !echoTimerChannel) {
@@ -295,7 +209,7 @@ onUnmounted(() => {
                         <div
                             class="font-mono text-7xl font-black tabular-nums sm:text-8xl"
                         >
-                            {{ formatDuration(displayMilliseconds) }}
+                            {{ formatTimerDuration(displayMilliseconds) }}
                         </div>
                         <div
                             class="mt-3 flex flex-wrap items-center gap-3 text-sm font-bold uppercase"

@@ -451,10 +451,13 @@ const shouldReloadScoreStateFromDatabase = (
         return true;
     }
 
+    const isStartingMatch =
+        ['not_started', 'done'].includes(currentMatch.value.status) &&
+        updatedMatch.status === 'ongoing';
+
     return (
         getMatchId(currentMatch.value) !== getMatchId(updatedMatch) ||
-        (currentMatch.value.status === 'not_started' &&
-            updatedMatch.status === 'ongoing')
+        isStartingMatch
     );
 };
 
@@ -508,7 +511,8 @@ watch(
         const isDifferentMatchType = matchType !== previousMatchType;
         const isDifferentJury = currentJuryNumber !== previousJuryNumber;
         const isStartingMatch =
-            previousMatchStatus === 'not_started' && matchStatus === 'ongoing';
+            ['not_started', 'done'].includes(String(previousMatchStatus)) &&
+            matchStatus === 'ongoing';
 
         resetDraftFromMatch(currentMatch.value, {
             resetSelectedCriterion:

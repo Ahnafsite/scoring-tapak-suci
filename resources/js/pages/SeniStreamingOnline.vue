@@ -2,6 +2,10 @@
 import { Head, router } from '@inertiajs/vue3';
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
 import { useFullscreenLock } from '@/composables/useFullscreenLock';
+import {
+    useSyncedTimer,
+    type SyncedTimerState,
+} from '@/composables/useSyncedTimer';
 
 type ScoreKey =
     | 'wiraga'
@@ -76,20 +80,25 @@ type SeniMatch = {
 
 type MatchDisplayStatus = 'not_started' | 'ongoing' | 'paused' | 'done';
 
-type TimerState = {
+type TimerState = SyncedTimerState & {
     id: number | null;
     is_display: boolean;
-    started_at: string | null;
-    started_at_milliseconds?: number | null;
-    status: 'running' | 'paused' | 'stopped';
     stored_status?: 'running' | 'paused' | 'stopped';
-    is_countdown: boolean;
-    second: number;
-    is_autostop: boolean;
-    elapsed_seconds: number;
-    elapsed_milliseconds?: number;
-    display_seconds: number;
-    display_milliseconds?: number;
+};
+
+const defaultTimer: TimerState = {
+    id: null,
+    is_display: false,
+    started_at: null,
+    started_at_milliseconds: null,
+    status: 'stopped',
+    is_countdown: true,
+    second: 120,
+    is_autostop: false,
+    elapsed_seconds: 0,
+    elapsed_milliseconds: 0,
+    display_seconds: 120,
+    display_milliseconds: 120000,
 };
 
 const props = defineProps<{
@@ -102,23 +111,11 @@ const props = defineProps<{
 const currentMatch = ref<SeniMatch | null>(props.activeMatch ?? null);
 const rankedMatches = ref<SeniMatch[]>(props.rankedMatches ?? []);
 const hasReloadedInitialDatabaseState = ref(false);
-const localTimer = ref<TimerState>(
-    props.timer ?? {
-        id: null,
-        is_display: false,
-        started_at: null,
-        started_at_milliseconds: null,
-        status: 'stopped',
-        is_countdown: true,
-        second: 120,
-        is_autostop: false,
-        elapsed_seconds: 0,
-        elapsed_milliseconds: 0,
-        display_seconds: 120,
-        display_milliseconds: 120000,
-    },
-);
-const timerNowTick = ref(Date.now());
+const {
+    formattedTimer,
+    localTimer,
+    syncTimer,
+} = useSyncedTimer(props.timer ?? defaultTimer);
 const { buttonTitle, triggerFullscreen } = useFullscreenLock();
 
 const juries = [1, 2, 3, 4, 5];
@@ -175,6 +172,7 @@ const hasActiveMatch = computed(() => currentMatch.value !== null);
 const shouldShowWinnerTable = computed(() => {
     return (
         rankedMatches.value.length > 0 &&
+        currentMatch.value?.status !== 'ongoing' &&
         rankedMatches.value.every(
             (match) => match.rank !== null && match.rank !== undefined,
         )
@@ -425,55 +423,6 @@ const finalScore = computed(() => {
     return numericValue(currentMatch.value?.total_score);
 });
 
-const timerElapsedMilliseconds = computed(() => {
-    let elapsed =
-        localTimer.value.elapsed_milliseconds ??
-        (Number(localTimer.value.elapsed_seconds) || 0) * 1000;
-
-    if (localTimer.value.status === 'running' && localTimer.value.started_at) {
-        elapsed += Math.max(
-            0,
-            timerNowTick.value -
-                (localTimer.value.started_at_milliseconds ??
-                    Date.parse(localTimer.value.started_at)),
-        );
-    }
-
-    return elapsed;
-});
-
-const timerDisplayMilliseconds = computed(() => {
-    if (localTimer.value.is_countdown) {
-        return Math.max(
-            0,
-            localTimer.value.second * 1000 - timerElapsedMilliseconds.value,
-        );
-    }
-
-    if (localTimer.value.is_autostop) {
-        return Math.min(
-            timerElapsedMilliseconds.value,
-            localTimer.value.second * 1000,
-        );
-    }
-
-    return timerElapsedMilliseconds.value;
-});
-
-const formattedTimer = computed(() => {
-    const safeMilliseconds = Math.max(
-        0,
-        Math.floor(timerDisplayMilliseconds.value),
-    );
-    const minutes = Math.floor(safeMilliseconds / 60000);
-    const seconds = Math.floor((safeMilliseconds % 60000) / 1000);
-    const milliseconds = safeMilliseconds % 1000;
-
-    return `${minutes.toString().padStart(2, '0')}:${seconds
-        .toString()
-        .padStart(2, '0')}:${milliseconds.toString().padStart(3, '0')}`;
-});
-
 const shouldShowActiveTimer = computed(() => {
     return (
         matchStatus.value === 'ongoing' && Boolean(localTimer.value.is_display)
@@ -597,9 +546,15 @@ const arenaDisplayName = computed(
 
 const partaiLabel = computed(() => currentMatch.value?.matches_code ?? '-');
 
+const syncScoreStateFromPage = (page: any) => {
+    currentMatch.value = (page.props.activeMatch ?? null) as SeniMatch | null;
+    rankedMatches.value = (page.props.rankedMatches ?? []) as SeniMatch[];
+};
+
 const reloadScoreStateFromDatabase = () => {
     router.reload({
         only: ['activeMatch', 'rankedMatches'],
+        onSuccess: syncScoreStateFromPage,
     });
 };
 
@@ -630,10 +585,13 @@ const shouldReloadScoreStateFromDatabase = (
         return true;
     }
 
+    const isStartingMatch =
+        ['not_started', 'done'].includes(currentMatch.value.status) &&
+        updatedMatch.status === 'ongoing';
+
     return (
         getMatchId(currentMatch.value) !== getMatchId(updatedMatch) ||
-        (currentMatch.value.status === 'not_started' &&
-            updatedMatch.status === 'ongoing') ||
+        isStartingMatch ||
         updatedMatch.status === 'done'
     );
 };
@@ -702,7 +660,7 @@ watch(
     () => props.timer,
     (timer) => {
         if (timer) {
-            localTimer.value = { ...localTimer.value, ...timer };
+            syncTimer(timer);
         }
     },
     { deep: true },
@@ -711,13 +669,8 @@ watch(
 let echoStatusChannel: any = null;
 let echoScoreChannel: any = null;
 let echoTimerChannel: any = null;
-let timerTickInterval: ReturnType<typeof setInterval> | null = null;
 
 onMounted(() => {
-    timerTickInterval = setInterval(() => {
-        timerNowTick.value = Date.now();
-    }, 25);
-
     reloadInitialScoreStateFromDatabase();
 
     const echo = (window as any).Echo;
@@ -790,16 +743,12 @@ onMounted(() => {
         .channel('timer')
         .listen('.TimerUpdated', (event: any) => {
             if (event.timer) {
-                localTimer.value = { ...localTimer.value, ...event.timer };
+                syncTimer(event.timer);
             }
         });
 });
 
 onUnmounted(() => {
-    if (timerTickInterval) {
-        clearInterval(timerTickInterval);
-    }
-
     const echo = (window as any).Echo;
 
     if (echoStatusChannel) {
