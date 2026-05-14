@@ -99,6 +99,26 @@ const {
 
 const juries = [1, 2, 3, 4, 5];
 
+const isOngoingMatch = (match: SeniMatch | null | undefined) => {
+    return match?.status === 'ongoing';
+};
+
+const setRankedMatches = (matches: SeniMatch[] | null | undefined) => {
+    rankedMatches.value = isOngoingMatch(currentMatch.value)
+        ? []
+        : (matches ?? []);
+};
+
+const setCurrentMatch = (match: SeniMatch | null | undefined) => {
+    currentMatch.value = match ?? null;
+
+    if (isOngoingMatch(currentMatch.value)) {
+        rankedMatches.value = [];
+    }
+};
+
+setRankedMatches(rankedMatches.value);
+
 const tgrCriteria: ScoreCriterion[] = [
     { key: 'wiraga', label: 'Wiraga' },
     { key: 'wirasa', label: 'Wirasa' },
@@ -153,9 +173,15 @@ const isWaiting = computed(() => {
 });
 
 const shouldShowWinnerTable = computed(() => {
+    if (isOngoingMatch(currentMatch.value)) {
+        return false;
+    }
+
     return (
         rankedMatches.value.length > 0 &&
-        currentMatch.value?.status !== 'ongoing'
+        rankedMatches.value.every(
+            (match) => match.rank !== null && match.rank !== undefined,
+        )
     );
 });
 
@@ -539,8 +565,8 @@ const shouldReloadScoreStateFromDatabase = (
 };
 
 const syncScoreStateFromPage = (page: any) => {
-    currentMatch.value = (page.props.activeMatch ?? null) as SeniMatch | null;
-    rankedMatches.value = (page.props.rankedMatches ?? []) as SeniMatch[];
+    setCurrentMatch((page.props.activeMatch ?? null) as SeniMatch | null);
+    setRankedMatches((page.props.rankedMatches ?? []) as SeniMatch[]);
 };
 
 const reloadScoreStateFromDatabase = () => {
@@ -572,7 +598,7 @@ const reloadInitialScoreStateFromDatabase = () => {
 watch(
     () => props.activeMatch,
     (match) => {
-        currentMatch.value = match ?? null;
+        setCurrentMatch(match);
     },
     { deep: true },
 );
@@ -580,7 +606,7 @@ watch(
 watch(
     () => props.rankedMatches,
     (matches) => {
-        rankedMatches.value = matches ?? [];
+        setRankedMatches(matches);
     },
     { deep: true },
 );
@@ -614,10 +640,10 @@ onMounted(() => {
                 event.match,
             );
 
-            currentMatch.value = {
+            setCurrentMatch({
                 ...(currentMatch.value ?? {}),
                 ...event.match,
-            };
+            } as SeniMatch);
 
             if (shouldReload) {
                 reloadScoreStateFromDatabase();
@@ -636,16 +662,16 @@ onMounted(() => {
             }
 
             if (event.match?.jury_scores) {
-                currentMatch.value = event.match;
+                setCurrentMatch(event.match);
 
                 return;
             }
 
             if (event.match) {
-                currentMatch.value = {
+                setCurrentMatch({
                     ...(currentMatch.value ?? {}),
                     ...event.match,
-                };
+                } as SeniMatch);
             }
 
             if (event.score?.jury_number) {

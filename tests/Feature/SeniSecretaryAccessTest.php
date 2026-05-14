@@ -148,4 +148,57 @@ class SeniSecretaryAccessTest extends TestCase
                 ->where('rankedMatches.1.is_passed', true)
             );
     }
+
+    #[Test]
+    public function secretary_does_not_receive_ranked_matches_when_a_ranked_match_is_ongoing(): void
+    {
+        $secretary = Role::create(['name' => 'Sekretaris']);
+        $user = User::factory()->create(['role_id' => $secretary->id]);
+
+        $activeMatch = SeniSingleMatch::create([
+            'no_pool_babak_id' => 55,
+            'bkp_id' => 3410,
+            'matches_code' => 'S-01',
+            'atletes' => 'Atlet A',
+            'contingent' => 'Kontingen A',
+            'type' => 'tunggal',
+            'category' => 'Tunggal',
+            'group' => 'Putra',
+            'status' => 'ongoing',
+            'is_active' => true,
+            'is_passed' => true,
+            'round_match' => 'Final',
+            'no_order' => 1,
+            'total_score' => 378,
+            'rank' => 1,
+        ]);
+
+        SeniSingleMatch::create([
+            'no_pool_babak_id' => 55,
+            'bkp_id' => 3411,
+            'matches_code' => 'S-02',
+            'atletes' => 'Atlet B',
+            'contingent' => 'Kontingen B',
+            'type' => 'tunggal',
+            'category' => 'Tunggal',
+            'group' => 'Putra',
+            'status' => 'done',
+            'is_active' => false,
+            'is_passed' => false,
+            'round_match' => 'Final',
+            'no_order' => 2,
+            'total_score' => 360,
+            'rank' => 2,
+        ]);
+
+        $this->actingAs($user)
+            ->get(route('seni-secretary'))
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->component('SeniSecretary')
+                ->where('activeMatch.id', $activeMatch->id)
+                ->where('activeMatch.status', 'ongoing')
+                ->has('rankedMatches', 0)
+            );
+    }
 }
