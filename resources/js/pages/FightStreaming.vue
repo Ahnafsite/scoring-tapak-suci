@@ -3,10 +3,8 @@ import { Head, router } from '@inertiajs/vue3';
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
 import FightWaitingState from '@/components/fight/FightWaitingState.vue';
 import { useFullscreenLock } from '@/composables/useFullscreenLock';
-import {
-    useSyncedTimer,
-    type SyncedTimerState,
-} from '@/composables/useSyncedTimer';
+import { useSyncedTimer } from '@/composables/useSyncedTimer';
+import type { SyncedTimerState } from '@/composables/useSyncedTimer';
 
 const props = defineProps<{
     arena: any;
@@ -43,11 +41,9 @@ const { buttonTitle, triggerFullscreen } = useFullscreenLock();
 const localRecapPoints = ref<any[]>([...(props.recapPoints || [])]);
 const localYellowPoints = ref<any[]>([...(props.yellowPoints || [])]);
 const localBluePoints = ref<any[]>([...(props.bluePoints || [])]);
-const {
-    formattedTimer,
-    localTimer,
-    syncTimer,
-} = useSyncedTimer(props.timer ?? defaultTimer);
+const { formattedTimer, localTimer, syncTimer } = useSyncedTimer(
+    props.timer ?? defaultTimer,
+);
 const scoreNameById: Record<number, string> = {
     1: '20',
     2: '10+20',
@@ -339,8 +335,8 @@ const getCornerStats = (cornerPoints: any[], roundNumbers = [1, 2, 3]) => {
     };
 
     roundNumbers.forEach((roundNumber) => {
-        const pointsArray = cornerPoints.filter(
-            (point: any) => isSameRound(point.round_number, roundNumber),
+        const pointsArray = cornerPoints.filter((point: any) =>
+            isSameRound(point.round_number, roundNumber),
         );
         const juryPointCounts: Record<number, Record<string, number>> = {
             1: {},
@@ -414,7 +410,8 @@ const getCornerStats = (cornerPoints: any[], roundNumbers = [1, 2, 3]) => {
                             ? Math.abs(Number(point.punishment.score))
                             : (punishmentScoreById[
                                   Number(point.ref_punishment_id)
-                              ] ?? 0) ||
+                              ] ??
+                                  0) ||
                               Math.abs(
                                   parseInt(point.punishment?.name || '0') || 0,
                               );
@@ -468,6 +465,84 @@ const currentRoundStats = computed(() => ({
         currentRoundNumber.value,
     ]),
 }));
+
+const getValidPunishmentNames = (
+    cornerPoints: any[],
+    roundNumbers = [1, 2, 3],
+) => {
+    const punishmentNames: string[] = [];
+
+    roundNumbers.forEach((roundNumber) => {
+        const pointsArray = cornerPoints.filter(
+            (point: any) =>
+                isSameRound(point.round_number, roundNumber) &&
+                point.ref_punishment_id,
+        );
+        const juryPointCounts: Record<number, Record<string, number>> = {
+            1: {},
+            2: {},
+            3: {},
+            4: {},
+        };
+        const idToPoint: Record<string, any> = {};
+
+        pointsArray.forEach((point: any) => {
+            const juryNumber = point.jury_number;
+
+            if (juryNumber >= 1 && juryNumber <= 4) {
+                const id = `p:${point.ref_punishment_id}`;
+
+                juryPointCounts[juryNumber][id] =
+                    (juryPointCounts[juryNumber][id] || 0) + 1;
+                idToPoint[id] = point;
+            }
+        });
+
+        const allIds = new Set<string>();
+        [1, 2, 3, 4].forEach((juryNumber) =>
+            Object.keys(juryPointCounts[juryNumber]).forEach((key) =>
+                allIds.add(key),
+            ),
+        );
+
+        allIds.forEach((id) => {
+            let maxOccurrences = 0;
+
+            for (let juryNumber = 1; juryNumber <= 4; juryNumber++) {
+                maxOccurrences = Math.max(
+                    maxOccurrences,
+                    juryPointCounts[juryNumber][id] || 0,
+                );
+            }
+
+            for (let index = 1; index <= maxOccurrences; index++) {
+                let juryCount = 0;
+
+                for (let juryNumber = 1; juryNumber <= 4; juryNumber++) {
+                    if ((juryPointCounts[juryNumber][id] || 0) >= index) {
+                        juryCount++;
+                    }
+                }
+
+                if (juryCount >= 3) {
+                    punishmentNames.push(idToPoint[id]?.punishment?.name);
+                }
+            }
+        });
+    });
+
+    return punishmentNames.filter(Boolean);
+};
+
+const validBluePunishments = computed(() =>
+    getValidPunishmentNames(localBluePoints.value, [currentRoundNumber.value]),
+);
+
+const validYellowPunishments = computed(() =>
+    getValidPunishmentNames(localYellowPoints.value, [
+        currentRoundNumber.value,
+    ]),
+);
 
 const isMatchDone = computed(() => currentMatch.value?.status === 'done');
 
@@ -957,7 +1032,9 @@ const partaiLabel = computed(() => currentMatch.value?.match_code ?? '-');
                             >
                                 {{ currentMatch?.contingent_yellow || '-' }}
                             </p>
-                            <div class="mt-auto flex w-full justify-center">
+                            <div
+                                class="mt-auto flex w-full flex-col items-center justify-center gap-3"
+                            >
                                 <div
                                     :class="[
                                         'w-full text-center text-[min(27vh,20rem)] leading-none font-black drop-shadow-sm',
@@ -970,6 +1047,19 @@ const partaiLabel = computed(() => currentMatch.value?.match_code ?? '-');
                                     {{
                                         activeRoundRecap?.total_poin_yellow || 0
                                     }}
+                                </div>
+                                <div
+                                    v-if="validYellowPunishments.length > 0"
+                                    class="flex min-h-12 max-w-full flex-wrap items-center justify-center gap-3 px-5 py-2 text-7xl font-black tracking-widest text-red-600"
+                                >
+                                    <span
+                                        v-for="(
+                                            punishment, index
+                                        ) in validYellowPunishments"
+                                        :key="`yellow-punishment-${punishment}-${index}`"
+                                        class="font-mono tabular-nums"
+                                        >{{ punishment }}</span
+                                    >
                                 </div>
                             </div>
                         </div>
@@ -1079,7 +1169,9 @@ const partaiLabel = computed(() => currentMatch.value?.match_code ?? '-');
                             >
                                 {{ currentMatch?.contingent_blue || '-' }}
                             </p>
-                            <div class="mt-auto flex w-full justify-center">
+                            <div
+                                class="mt-auto flex w-full flex-col items-center justify-center gap-3"
+                            >
                                 <div
                                     :class="[
                                         'w-full text-center text-[min(27vh,20rem)] leading-none font-black drop-shadow-sm',
@@ -1090,6 +1182,19 @@ const partaiLabel = computed(() => currentMatch.value?.match_code ?? '-');
                                     ]"
                                 >
                                     {{ activeRoundRecap?.total_poin_blue || 0 }}
+                                </div>
+                                <div
+                                    v-if="validBluePunishments.length > 0"
+                                    class="flex min-h-12 max-w-full flex-wrap items-center justify-center gap-3 px-5 py-2 text-7xl font-black tracking-widest text-red-600"
+                                >
+                                    <span
+                                        v-for="(
+                                            punishment, index
+                                        ) in validBluePunishments"
+                                        :key="`blue-punishment-${punishment}-${index}`"
+                                        class="font-mono tabular-nums"
+                                        >{{ punishment }}</span
+                                    >
                                 </div>
                             </div>
                         </div>
