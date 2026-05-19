@@ -2,10 +2,8 @@
 import { Head, router } from '@inertiajs/vue3';
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
 import { useFullscreenLock } from '@/composables/useFullscreenLock';
-import {
-    useSyncedTimer,
-    type SyncedTimerState,
-} from '@/composables/useSyncedTimer';
+import { useSyncedTimer } from '@/composables/useSyncedTimer';
+import type { SyncedTimerState } from '@/composables/useSyncedTimer';
 
 const props = defineProps<{
     arena: any;
@@ -44,11 +42,9 @@ const { buttonTitle, triggerFullscreen } = useFullscreenLock();
 const localRecapPoints = ref<any[]>([...(props.recapPoints || [])]);
 const localYellowPoints = ref<any[]>([...(props.yellowPoints || [])]);
 const localBluePoints = ref<any[]>([...(props.bluePoints || [])]);
-const {
-    formattedTimer,
-    localTimer,
-    syncTimer,
-} = useSyncedTimer(props.timer ?? defaultTimer);
+const { formattedTimer, localTimer, syncTimer } = useSyncedTimer(
+    props.timer ?? defaultTimer,
+);
 const scoreNameById: Record<number, string> = {
     1: '20',
     2: '10+20',
@@ -200,8 +196,8 @@ const getCornerStats = (cornerPoints: any[], roundNumbers = [1, 2, 3]) => {
     };
 
     roundNumbers.forEach((roundNumber) => {
-        const pointsArray = cornerPoints.filter(
-            (point: any) => isSameRound(point.round_number, roundNumber),
+        const pointsArray = cornerPoints.filter((point: any) =>
+            isSameRound(point.round_number, roundNumber),
         );
         const juryPointCounts: Record<number, Record<string, number>> = {
             1: {},
@@ -275,7 +271,8 @@ const getCornerStats = (cornerPoints: any[], roundNumbers = [1, 2, 3]) => {
                             ? Math.abs(Number(point.punishment.score))
                             : (punishmentScoreById[
                                   Number(point.ref_punishment_id)
-                              ] ?? 0) ||
+                              ] ??
+                                  0) ||
                               Math.abs(
                                   parseInt(point.punishment?.name || '0') || 0,
                               );
@@ -340,10 +337,10 @@ const roundWinnerClass = (winner: any) => {
     }
 
     if (winner === 'draw') {
-        return 'border-white/50 bg-white/20 text-white';
+        return 'border-zinc-600 bg-zinc-800 text-white';
     }
 
-    return 'border-white/10 bg-black/35 text-white/45 shadow-none';
+    return 'border-zinc-700 bg-zinc-900 text-zinc-500 shadow-none';
 };
 
 const matchStats = computed(() => {
@@ -510,23 +507,8 @@ const roundLabel = computed(() =>
         : (currentMatch.value?.round_number ?? '-'),
 );
 
-const matchTitle = computed(() =>
-    [
-        currentMatch.value?.match_round,
-        currentMatch.value?.group,
-        currentMatch.value?.category,
-    ]
-        .filter(Boolean)
-        .join(' ')
-        .toUpperCase(),
-);
-
 const categoryLabel = computed(() =>
     (currentMatch.value?.category || '-').toString().toUpperCase(),
-);
-
-const arenaDisplayName = computed(
-    () => props.arena?.arena_name ?? props.arena?.gelanggang_id ?? '-',
 );
 
 const partaiLabel = computed(() => currentMatch.value?.match_code ?? '-');
@@ -542,32 +524,40 @@ const partaiLabel = computed(() => currentMatch.value?.match_code ?? '-');
             <section
                 v-if="hasActiveMatch && matchStatus === 'not_started'"
                 key="not-started"
-                class="absolute inset-x-0 bottom-[6vh] flex justify-center px-5"
+                class="absolute inset-x-0 bottom-[7vh] flex justify-center px-5"
             >
                 <div
-                    class="overlay-shell w-[min(84vw,1420px)] cursor-pointer overflow-hidden rounded-md border border-white/25 bg-black/80 shadow-2xl backdrop-blur-sm"
+                    class="overlay-shell w-[min(76vw,1180px)] cursor-pointer overflow-hidden rounded-none bg-[#20236f] text-white shadow-[0_18px_45px_rgba(0,0,0,0.38)] ring-1 ring-indigo-200"
                     :title="buttonTitle"
                     @click="triggerFullscreen"
                 >
                     <div
-                        class="overlay-topbar flex h-7 items-center justify-between gap-5 border-b border-white/15 bg-black/90 px-7 text-[10px] font-black tracking-widest text-zinc-200 uppercase"
+                        class="overlay-topbar flex h-9 items-center justify-between gap-5 bg-black px-5 text-xs font-black tracking-widest uppercase"
                     >
-                        <span class="min-w-0 break-words">
-                            {{ matchTitle || 'Tanding' }}
-                        </span>
-                        <span class="shrink-0 text-yellow-300">
-                            Next Match
-                        </span>
+                        <div class="flex items-center gap-2">
+                            <img
+                                src="/assets/images/ts_logo.png"
+                                alt=""
+                                class="size-6 object-contain"
+                            />
+                            <img
+                                src="/assets/images/js_logo.png"
+                                alt=""
+                                class="size-6 object-contain"
+                            />
+                        </div>
+                        <span class="text-white">Juarasilat.com</span>
+                        <span class="text-yellow-300"> Next Match </span>
                     </div>
 
                     <div
-                        class="grid h-20 grid-cols-[minmax(0,1.4fr)_10rem_minmax(0,1.4fr)] items-stretch"
+                        class="grid h-14 grid-cols-[minmax(0,1fr)_10rem_minmax(0,1fr)] items-stretch bg-[#252987]"
                     >
                         <div
-                            class="overlay-blue flex min-w-0 flex-col items-end justify-center gap-0.5 bg-gradient-to-r from-blue-700 to-blue-600 px-6 text-right text-white"
+                            class="overlay-blue flex min-w-0 flex-col items-end justify-center bg-[#1f4fd8] px-5 text-right text-white"
                         >
                             <h2
-                                class="max-w-full text-[clamp(1.15rem,1.65vw,1.85rem)] leading-tight font-black break-words uppercase drop-shadow-sm"
+                                class="max-w-full truncate text-xl leading-tight font-black uppercase"
                             >
                                 {{
                                     currentMatch?.atlete_blue ||
@@ -576,37 +566,32 @@ const partaiLabel = computed(() => currentMatch.value?.match_code ?? '-');
                                 }}
                             </h2>
                             <p
-                                class="max-w-full text-sm leading-tight font-bold break-words uppercase"
+                                class="mt-1 max-w-full truncate text-[10px] font-bold tracking-widest text-blue-100 uppercase"
                             >
                                 {{ currentMatch?.contingent_blue || '-' }}
                             </p>
                         </div>
 
                         <div
-                            class="overlay-center relative z-10 flex flex-col items-center justify-center gap-0.5 border-x border-white/15 bg-zinc-950/95 px-3 text-center shadow-[0_0_35px_rgba(0,0,0,0.55)]"
+                            class="overlay-center relative z-10 flex flex-col items-center justify-center bg-[#1c1f62] px-3 text-center"
                         >
                             <div
                                 class="text-sm leading-tight font-black tracking-widest text-yellow-300 uppercase"
                             >
-                                Partai {{ partaiLabel }}
+                                Partai
                             </div>
                             <div
-                                class="text-[10px] font-black tracking-widest text-zinc-400 uppercase"
+                                class="text-2xl leading-none font-black tracking-widest text-white uppercase"
                             >
-                                Gelanggang
-                            </div>
-                            <div
-                                class="max-w-full text-xs leading-tight font-black break-words text-zinc-100 uppercase"
-                            >
-                                {{ arenaDisplayName }}
+                                {{ partaiLabel }}
                             </div>
                         </div>
 
                         <div
-                            class="overlay-yellow flex min-w-0 flex-col items-start justify-center gap-0.5 bg-gradient-to-l from-yellow-400 to-yellow-300 px-6 text-left text-black"
+                            class="overlay-yellow flex min-w-0 flex-col items-start justify-center bg-yellow-400 px-5 text-left text-black"
                         >
                             <h2
-                                class="max-w-full text-[clamp(1.15rem,1.65vw,1.85rem)] leading-tight font-black break-words uppercase drop-shadow-sm"
+                                class="max-w-full truncate text-xl leading-tight font-black uppercase"
                             >
                                 {{
                                     currentMatch?.atlete_yellow ||
@@ -615,17 +600,11 @@ const partaiLabel = computed(() => currentMatch.value?.match_code ?? '-');
                                 }}
                             </h2>
                             <p
-                                class="max-w-full text-sm leading-tight font-bold break-words uppercase"
+                                class="mt-1 max-w-full truncate text-[10px] font-bold tracking-widest text-yellow-900 uppercase"
                             >
                                 {{ currentMatch?.contingent_yellow || '-' }}
                             </p>
                         </div>
-                    </div>
-
-                    <div
-                        class="overlay-footer flex h-7 items-center justify-center border-t border-white/15 bg-black/90 px-7 text-xs font-black tracking-widest uppercase"
-                    >
-                        juarasilat.com
                     </div>
                 </div>
             </section>
@@ -633,28 +612,28 @@ const partaiLabel = computed(() => currentMatch.value?.match_code ?? '-');
             <section
                 v-else-if="hasActiveMatch && matchStatus === 'ongoing'"
                 key="ongoing"
-                class="absolute inset-x-0 bottom-[5vh] flex flex-col items-center gap-2 px-5"
+                class="absolute inset-x-0 bottom-[7vh] flex flex-col items-center px-5"
             >
                 <div
-                    class="overlay-topbar rounded-md border border-white/20 bg-black/90 px-5 py-1.5 text-xs font-black tracking-widest text-yellow-300 uppercase shadow-xl"
-                >
-                    {{ matchTitle || 'Tanding' }}
-                </div>
-
-                <div
-                    class="overlay-shell w-[min(90vw,1560px)] cursor-pointer overflow-hidden rounded-md border border-white/25 bg-black/80 shadow-2xl backdrop-blur-sm"
+                    class="overlay-shell w-[min(76vw,1180px)] cursor-pointer overflow-hidden rounded-none bg-[#20236f] text-white shadow-[0_18px_45px_rgba(0,0,0,0.38)] ring-1 ring-indigo-200"
                     :title="buttonTitle"
                     @click="triggerFullscreen"
                 >
                     <div
-                        class="grid h-24 grid-cols-[minmax(0,1.45fr)_17rem_minmax(0,1.45fr)] items-stretch"
+                        class="overlay-topbar flex h-9 items-center justify-center bg-black px-6 text-xs font-black tracking-widest text-white uppercase"
+                    >
+                        Juarasilat.com
+                    </div>
+
+                    <div
+                        class="grid h-14 grid-cols-[minmax(0,1fr)_5rem_7rem_5rem_minmax(0,1fr)] items-stretch bg-[#252987]"
                     >
                         <div
-                            class="overlay-blue flex min-w-0 items-center justify-end gap-5 bg-gradient-to-r from-blue-700 to-blue-600 px-5 text-right text-white"
+                            class="overlay-blue flex min-w-0 items-center justify-end gap-3 overflow-hidden bg-[#1f4fd8] px-5 text-right text-white"
                         >
-                            <div class="min-w-0">
+                            <div class="min-w-0 leading-none">
                                 <h2
-                                    class="max-w-full text-[clamp(1.05rem,1.45vw,1.6rem)] leading-tight font-black break-words uppercase"
+                                    class="max-w-full truncate text-xl font-black uppercase"
                                 >
                                     {{
                                         currentMatch?.atlete_blue ||
@@ -663,56 +642,53 @@ const partaiLabel = computed(() => currentMatch.value?.match_code ?? '-');
                                     }}
                                 </h2>
                                 <p
-                                    class="max-w-full text-xs leading-tight font-bold break-words uppercase"
+                                    class="mt-1 max-w-full truncate text-[10px] font-bold tracking-widest text-blue-100 uppercase"
                                 >
                                     {{ currentMatch?.contingent_blue || '-' }}
                                 </p>
                             </div>
-                            <div
-                                class="overlay-score shrink-0 text-5xl font-black text-white tabular-nums"
-                            >
-                                {{ activeRoundRecap?.total_poin_blue || 0 }}
-                            </div>
                         </div>
 
                         <div
-                            class="overlay-center relative z-10 flex flex-col items-center justify-center gap-1 border-x border-white/15 bg-zinc-950/95 px-3 text-center shadow-[0_0_35px_rgba(0,0,0,0.55)]"
+                            class="overlay-score-card overlay-score-card-blue flex items-center justify-center bg-[#f4f1e8] text-4xl font-black text-[#20236f] tabular-nums"
+                        >
+                            {{ activeRoundRecap?.total_poin_blue || 0 }}
+                        </div>
+
+                        <div
+                            class="overlay-center relative z-10 flex flex-col items-center justify-center bg-[#1c1f62] px-3 text-center"
                         >
                             <div
-                                class="text-xs leading-tight font-black tracking-widest text-yellow-300 uppercase"
-                            >
-                                Partai {{ partaiLabel }}
-                            </div>
-                            <div
                                 v-if="isTimerDisplayed"
-                                class="overlay-score font-mono text-[clamp(1.45rem,2.45vw,2.55rem)] leading-none font-black tracking-wider text-white tabular-nums"
+                                class="font-mono text-xl leading-none font-black tracking-wider text-white tabular-nums"
                             >
                                 {{ formattedTimer }}
                             </div>
                             <div
                                 v-else
-                                class="max-w-full text-[10px] leading-tight font-black break-words text-zinc-100 uppercase"
+                                class="text-xl leading-none font-black tracking-widest text-white uppercase"
                             >
-                                {{ arenaDisplayName }}
+                                {{ partaiLabel }}
                             </div>
                             <div
-                                class="text-xs leading-tight font-black tracking-widest text-zinc-400 uppercase"
+                                class="mt-1 text-[10px] leading-none font-black tracking-widest text-indigo-300 uppercase"
                             >
-                                Round {{ roundLabel }}
+                                {{ isTimerDisplayed ? 'Waktu' : 'Partai' }}
                             </div>
                         </div>
 
                         <div
-                            class="overlay-yellow flex min-w-0 items-center justify-start gap-5 bg-gradient-to-l from-yellow-400 to-yellow-300 px-5 text-left text-black"
+                            class="overlay-score-card overlay-score-card-yellow flex items-center justify-center bg-[#f4f1e8] text-4xl font-black text-[#20236f] tabular-nums"
                         >
-                            <div
-                                class="overlay-score shrink-0 text-5xl font-black text-black tabular-nums"
-                            >
-                                {{ activeRoundRecap?.total_poin_yellow || 0 }}
-                            </div>
-                            <div class="min-w-0">
+                            {{ activeRoundRecap?.total_poin_yellow || 0 }}
+                        </div>
+
+                        <div
+                            class="overlay-yellow flex min-w-0 items-center justify-start gap-3 overflow-hidden bg-yellow-400 px-5 text-left text-black"
+                        >
+                            <div class="min-w-0 leading-none">
                                 <h2
-                                    class="max-w-full text-[clamp(1.05rem,1.45vw,1.6rem)] leading-tight font-black break-words uppercase"
+                                    class="max-w-full truncate text-xl font-black uppercase"
                                 >
                                     {{
                                         currentMatch?.atlete_yellow ||
@@ -721,19 +697,12 @@ const partaiLabel = computed(() => currentMatch.value?.match_code ?? '-');
                                     }}
                                 </h2>
                                 <p
-                                    class="max-w-full text-xs leading-tight font-bold break-words uppercase"
+                                    class="mt-1 max-w-full truncate text-[10px] font-bold tracking-widest text-yellow-900 uppercase"
                                 >
                                     {{ currentMatch?.contingent_yellow || '-' }}
                                 </p>
                             </div>
                         </div>
-                    </div>
-
-                    <div
-                        class="overlay-footer flex h-7 items-center justify-between gap-5 border-t border-white/15 bg-black/90 px-7 text-xs font-black tracking-widest uppercase"
-                    >
-                        <span>{{ matchTitle || 'Tanding' }}</span>
-                        <span>juarasilat.com</span>
                     </div>
                 </div>
             </section>
@@ -741,19 +710,37 @@ const partaiLabel = computed(() => currentMatch.value?.match_code ?? '-');
             <article
                 v-else-if="hasActiveMatch && matchStatus === 'paused'"
                 key="paused"
-                class="overlay-shell absolute inset-x-0 bottom-[5vh] mx-auto max-h-[88vh] w-[min(96vw,1620px)] cursor-pointer overflow-hidden rounded-md border border-white/25 bg-black/60 text-white shadow-2xl backdrop-blur-sm"
+                class="overlay-shell absolute inset-x-0 bottom-[7vh] mx-auto max-h-[86vh] w-[min(82vw,1220px)] cursor-pointer overflow-hidden rounded-none bg-black text-white shadow-[0_18px_45px_rgba(0,0,0,0.46)] ring-1 ring-zinc-800"
                 :title="buttonTitle"
                 @click="triggerFullscreen"
             >
+                <div
+                    class="overlay-topbar flex h-9 items-center justify-between gap-5 bg-black px-5 text-xs font-black tracking-widest uppercase"
+                >
+                    <div class="flex items-center gap-2">
+                        <img
+                            src="/assets/images/ts_logo.png"
+                            alt=""
+                            class="size-6 object-contain"
+                        />
+                        <img
+                            src="/assets/images/js_logo.png"
+                            alt=""
+                            class="size-6 object-contain"
+                        />
+                    </div>
+                    <span>Juarasilat.com</span>
+                    <span class="text-yellow-300">Jeda</span>
+                </div>
                 <header
-                    class="grid min-h-32 grid-cols-[minmax(0,1fr)_16rem_minmax(0,1fr)] border-b border-white/15"
+                    class="grid h-14 grid-cols-[minmax(0,1fr)_5rem_7rem_5rem_minmax(0,1fr)] items-stretch bg-zinc-950"
                 >
                     <div
-                        class="overlay-blue flex min-w-0 items-center justify-end gap-5 bg-blue-600/90 px-7 text-white"
+                        class="overlay-blue flex min-w-0 items-center justify-end gap-3 overflow-hidden bg-[#1f4fd8] px-5 text-right text-white"
                     >
-                        <div class="min-w-0 text-right">
+                        <div class="min-w-0 leading-none">
                             <h2
-                                class="max-w-full text-3xl leading-tight font-black break-words uppercase"
+                                class="max-w-full truncate text-xl font-black uppercase"
                             >
                                 {{
                                     currentMatch?.atlete_blue ||
@@ -762,49 +749,51 @@ const partaiLabel = computed(() => currentMatch.value?.match_code ?? '-');
                                 }}
                             </h2>
                             <p
-                                class="max-w-full text-lg leading-tight font-bold break-words uppercase"
+                                class="mt-1 max-w-full truncate text-[10px] font-bold tracking-widest text-blue-100 uppercase"
                             >
                                 {{ currentMatch?.contingent_blue || '-' }}
                             </p>
                         </div>
-                        <div
-                            class="overlay-score shrink-0 text-6xl font-black text-white tabular-nums"
-                        >
-                            {{ displayedBlueScore }}
-                        </div>
                     </div>
 
                     <div
-                        class="overlay-center flex flex-col items-center justify-center gap-2 border-x border-white/15 bg-black/75 px-5 text-center"
+                        class="overlay-score-card overlay-score-card-blue flex items-center justify-center bg-[#f4f1e8] text-4xl font-black text-[#20236f] tabular-nums"
+                    >
+                        {{ displayedBlueScore }}
+                    </div>
+
+                    <div
+                        class="overlay-center flex flex-col items-center justify-center bg-black px-3 text-center"
                     >
                         <span
-                            class="text-sm leading-tight font-black tracking-widest text-yellow-300 uppercase"
+                            class="text-[10px] leading-none font-black tracking-widest text-zinc-400 uppercase"
                         >
-                            Partai {{ partaiLabel }}
+                            Partai
                         </span>
                         <div
-                            class="text-xs font-black tracking-widest text-zinc-400 uppercase"
+                            class="text-xl leading-none font-black tracking-widest text-white uppercase"
                         >
-                            Gelanggang
+                            {{ partaiLabel }}
                         </div>
                         <div
-                            class="max-w-full text-sm font-black break-words text-zinc-100 uppercase"
+                            class="mt-1 max-w-full text-[10px] leading-none font-black tracking-widest text-yellow-300 uppercase"
                         >
-                            {{ arenaDisplayName }}
+                            Jeda {{ roundLabel }}
                         </div>
                     </div>
 
                     <div
-                        class="overlay-yellow flex min-w-0 items-center justify-start gap-5 bg-yellow-400/90 px-7 text-black"
+                        class="overlay-score-card overlay-score-card-yellow flex items-center justify-center bg-[#f4f1e8] text-4xl font-black text-[#20236f] tabular-nums"
                     >
-                        <div
-                            class="overlay-score shrink-0 text-6xl font-black text-black tabular-nums"
-                        >
-                            {{ displayedYellowScore }}
-                        </div>
-                        <div class="min-w-0 text-left">
+                        {{ displayedYellowScore }}
+                    </div>
+
+                    <div
+                        class="overlay-yellow flex min-w-0 items-center justify-start gap-3 overflow-hidden bg-yellow-400 px-5 text-left text-black"
+                    >
+                        <div class="min-w-0 leading-none">
                             <h2
-                                class="max-w-full text-3xl leading-tight font-black break-words uppercase"
+                                class="max-w-full truncate text-xl font-black uppercase"
                             >
                                 {{
                                     currentMatch?.atlete_yellow ||
@@ -813,7 +802,7 @@ const partaiLabel = computed(() => currentMatch.value?.match_code ?? '-');
                                 }}
                             </h2>
                             <p
-                                class="max-w-full text-lg leading-tight font-bold break-words uppercase"
+                                class="mt-1 max-w-full truncate text-[10px] font-bold tracking-widest text-yellow-900 uppercase"
                             >
                                 {{ currentMatch?.contingent_yellow || '-' }}
                             </p>
@@ -821,24 +810,24 @@ const partaiLabel = computed(() => currentMatch.value?.match_code ?? '-');
                     </div>
                 </header>
 
-                <div class="grid gap-5 p-5">
-                    <div class="flex w-full justify-center gap-5">
+                <div class="grid gap-3 p-4">
+                    <div class="grid w-full grid-cols-3 gap-1.5">
                         <div
                             v-for="(roundWinner, index) in roundWinnerCards"
                             :key="roundWinner.round"
-                            class="overlay-stat-row relative flex w-44 flex-col items-center"
+                            class="overlay-stat-row grid min-h-14 grid-rows-[1rem_1fr] overflow-hidden rounded-none bg-zinc-800 text-center"
                             :style="{
                                 '--row-delay': `${700 + index * 75}ms`,
                             }"
                         >
                             <div
-                                class="absolute -top-3 z-10 rounded-full bg-black px-2 text-[10px] font-black tracking-widest text-white/65 uppercase"
+                                class="flex items-center justify-center bg-black px-2 text-[10px] font-black tracking-widest text-zinc-400 uppercase"
                             >
                                 {{ roundWinner.label }}
                             </div>
                             <div
                                 :class="[
-                                    'relative w-full overflow-hidden rounded-md border py-3 text-center text-base font-black tracking-wider uppercase shadow-lg transition-all duration-300',
+                                    'flex items-center justify-center rounded-none border-t py-2 text-sm font-black tracking-wider uppercase transition-all duration-300',
                                     roundWinnerClass(
                                         getRoundWinner(roundWinner.round),
                                     ),
@@ -853,55 +842,55 @@ const partaiLabel = computed(() => currentMatch.value?.match_code ?? '-');
                         </div>
                     </div>
 
-                    <div class="grid gap-2">
+                    <div class="grid gap-1.5">
                         <div
                             v-for="(stat, index) in scoringStats"
                             :key="stat.score"
-                            class="overlay-stat-row grid grid-cols-[6rem_minmax(0,1fr)_6rem] items-center gap-4 rounded-md border border-white/10 bg-black/40 px-5 py-2.5"
+                            class="overlay-stat-row grid grid-cols-[4.5rem_minmax(0,1fr)_4.5rem] items-center gap-3 rounded-none bg-zinc-800 px-4 py-2"
                             :style="{
                                 '--row-delay': `${925 + index * 75}ms`,
                             }"
                         >
                             <div
-                                class="text-center text-2xl font-black text-white tabular-nums"
+                                class="text-center text-xl font-black text-white tabular-nums"
                             >
                                 {{ currentRoundStats.blueStats[stat.score] }}
                             </div>
                             <div
-                                class="text-center text-base font-black tracking-widest text-white uppercase"
+                                class="text-center text-sm font-black tracking-widest text-white uppercase"
                             >
                                 {{ stat.label }}
-                                <span class="text-xs text-white/70"
+                                <span class="text-xs text-zinc-300"
                                     >({{ stat.score }})</span
                                 >
                             </div>
                             <div
-                                class="text-center text-2xl font-black text-white tabular-nums"
+                                class="text-center text-xl font-black text-white tabular-nums"
                             >
                                 {{ currentRoundStats.yellowStats[stat.score] }}
                             </div>
                         </div>
 
                         <div
-                            class="overlay-stat-row grid grid-cols-[6rem_minmax(0,1fr)_6rem] items-center gap-4 rounded-md border border-white/10 bg-black/40 px-5 py-2.5"
+                            class="overlay-stat-row grid grid-cols-[4.5rem_minmax(0,1fr)_4.5rem] items-center gap-3 rounded-none bg-zinc-800 px-4 py-2"
                             :style="{
                                 '--row-delay': `${925 + scoringStats.length * 75}ms`,
                             }"
                         >
                             <div
-                                class="text-center text-2xl font-black text-white tabular-nums"
+                                class="text-center text-xl font-black text-red-200 tabular-nums"
                             >
                                 {{
                                     currentRoundStats.blueStats.punishmentPoints
                                 }}
                             </div>
                             <div
-                                class="text-center text-base font-black tracking-widest text-white uppercase"
+                                class="text-center text-sm font-black tracking-widest text-red-200 uppercase"
                             >
                                 Hukuman
                             </div>
                             <div
-                                class="text-center text-2xl font-black text-white tabular-nums"
+                                class="text-center text-xl font-black text-red-200 tabular-nums"
                             >
                                 {{
                                     currentRoundStats.yellowStats
@@ -913,7 +902,7 @@ const partaiLabel = computed(() => currentMatch.value?.match_code ?? '-');
                 </div>
 
                 <footer
-                    class="overlay-footer flex h-8 items-center justify-between gap-5 border-t border-white/15 bg-black/60 px-8 text-sm font-black tracking-widest uppercase"
+                    class="overlay-footer flex h-7 items-center justify-between gap-5 bg-black px-6 text-xs font-black tracking-widest uppercase"
                 >
                     <span>{{ categoryLabel }}</span>
                     <span>juarasilat.com</span>
@@ -923,19 +912,37 @@ const partaiLabel = computed(() => currentMatch.value?.match_code ?? '-');
             <article
                 v-else-if="hasActiveMatch"
                 key="done"
-                class="overlay-shell absolute inset-x-0 bottom-[5vh] mx-auto max-h-[88vh] w-[min(96vw,1620px)] cursor-pointer overflow-hidden rounded-md border border-white/25 bg-black/60 text-white shadow-2xl backdrop-blur-sm"
+                class="overlay-shell absolute inset-x-0 bottom-[7vh] mx-auto max-h-[86vh] w-[min(82vw,1220px)] cursor-pointer overflow-hidden rounded-none bg-black text-white shadow-[0_18px_45px_rgba(0,0,0,0.46)] ring-1 ring-zinc-800"
                 :title="buttonTitle"
                 @click="triggerFullscreen"
             >
+                <div
+                    class="overlay-topbar flex h-9 items-center justify-between gap-5 bg-black px-5 text-xs font-black tracking-widest uppercase"
+                >
+                    <div class="flex items-center gap-2">
+                        <img
+                            src="/assets/images/ts_logo.png"
+                            alt=""
+                            class="size-6 object-contain"
+                        />
+                        <img
+                            src="/assets/images/js_logo.png"
+                            alt=""
+                            class="size-6 object-contain"
+                        />
+                    </div>
+                    <span>Juarasilat.com</span>
+                    <span class="text-yellow-300">Selesai</span>
+                </div>
                 <header
-                    class="grid min-h-32 grid-cols-[minmax(0,1fr)_15rem_minmax(0,1fr)] border-b border-white/15"
+                    class="grid h-14 grid-cols-[minmax(0,1fr)_5rem_7rem_5rem_minmax(0,1fr)] items-stretch bg-zinc-950"
                 >
                     <div
-                        class="overlay-blue flex min-w-0 items-center justify-end gap-5 bg-blue-600/90 px-7 text-white"
+                        class="overlay-blue flex min-w-0 items-center justify-end gap-3 overflow-hidden bg-[#1f4fd8] px-5 text-right text-white"
                     >
-                        <div class="min-w-0 text-right">
+                        <div class="min-w-0 leading-none">
                             <h2
-                                class="max-w-full text-3xl leading-tight font-black break-words uppercase"
+                                class="max-w-full truncate text-xl font-black uppercase"
                             >
                                 {{
                                     currentMatch?.atlete_blue ||
@@ -944,50 +951,51 @@ const partaiLabel = computed(() => currentMatch.value?.match_code ?? '-');
                                 }}
                             </h2>
                             <p
-                                class="max-w-full text-lg leading-tight font-bold break-words uppercase"
+                                class="mt-1 max-w-full truncate text-[10px] font-bold tracking-widest text-blue-100 uppercase"
                             >
                                 {{ currentMatch?.contingent_blue || '-' }}
                             </p>
                         </div>
-                        <div
-                            class="overlay-score shrink-0 text-6xl font-black tabular-nums drop-shadow-md"
-                        >
-                            {{ displayedBlueScore }}
-                        </div>
                     </div>
 
                     <div
-                        class="overlay-center flex flex-col items-center justify-center gap-2 border-x border-white/15 bg-black/75 px-5 text-center"
+                        class="overlay-score-card overlay-score-card-blue flex items-center justify-center bg-[#f4f1e8] text-4xl font-black text-[#20236f] tabular-nums"
+                    >
+                        {{ displayedBlueScore }}
+                    </div>
+
+                    <div
+                        class="overlay-center flex flex-col items-center justify-center bg-black px-3 text-center"
                     >
                         <span
-                            class="text-xs font-black tracking-widest text-zinc-400 uppercase"
+                            class="text-[10px] leading-none font-black tracking-widest text-zinc-400 uppercase"
                         >
-                            Skor Ronde
+                            Partai
                         </span>
                         <div
-                            class="flex items-center gap-3 text-5xl leading-none font-black"
+                            class="text-xl leading-none font-black tracking-widest text-white uppercase"
                         >
-                            <span class="text-blue-300">
-                                {{ matchStats.scoreRound.split(' - ')[0] }}
-                            </span>
-                            <span class="text-3xl text-zinc-500">-</span>
-                            <span class="text-yellow-300">
-                                {{ matchStats.scoreRound.split(' - ')[1] }}
-                            </span>
+                            {{ partaiLabel }}
+                        </div>
+                        <div
+                            class="mt-1 text-[10px] leading-none font-black tracking-widest text-yellow-300 uppercase"
+                        >
+                            Selesai
                         </div>
                     </div>
 
                     <div
-                        class="overlay-yellow flex min-w-0 items-center justify-start gap-5 bg-yellow-400/90 px-7 text-black"
+                        class="overlay-score-card overlay-score-card-yellow flex items-center justify-center bg-[#f4f1e8] text-4xl font-black text-[#20236f] tabular-nums"
                     >
-                        <div
-                            class="overlay-score shrink-0 text-6xl font-black tabular-nums drop-shadow-md"
-                        >
-                            {{ displayedYellowScore }}
-                        </div>
-                        <div class="min-w-0 text-left">
+                        {{ displayedYellowScore }}
+                    </div>
+
+                    <div
+                        class="overlay-yellow flex min-w-0 items-center justify-start gap-3 overflow-hidden bg-yellow-400 px-5 text-left text-black"
+                    >
+                        <div class="min-w-0 leading-none">
                             <h2
-                                class="max-w-full text-3xl leading-tight font-black break-words uppercase"
+                                class="max-w-full truncate text-xl font-black uppercase"
                             >
                                 {{
                                     currentMatch?.atlete_yellow ||
@@ -996,7 +1004,7 @@ const partaiLabel = computed(() => currentMatch.value?.match_code ?? '-');
                                 }}
                             </h2>
                             <p
-                                class="max-w-full text-lg leading-tight font-bold break-words uppercase"
+                                class="mt-1 max-w-full truncate text-[10px] font-bold tracking-widest text-yellow-900 uppercase"
                             >
                                 {{ currentMatch?.contingent_yellow || '-' }}
                             </p>
@@ -1004,27 +1012,20 @@ const partaiLabel = computed(() => currentMatch.value?.match_code ?? '-');
                     </div>
                 </header>
 
-                <div
-                    class="overlay-footer flex h-8 items-center justify-between gap-5 border-b border-white/15 bg-black/75 px-8 text-sm font-black tracking-widest uppercase"
-                >
-                    <span>{{ matchTitle || 'Tanding' }}</span>
-                    <span>juarasilat.com</span>
-                </div>
-
-                <div class="grid gap-2 p-5">
+                <div class="grid gap-1.5 p-4">
                     <div
                         v-for="(stat, index) in scoringStats"
                         :key="stat.score"
-                        class="overlay-stat-row grid grid-cols-[6rem_minmax(0,1fr)_6rem] items-center gap-4 rounded-md border border-white/10 bg-black/40 px-5 py-3"
+                        class="overlay-stat-row grid grid-cols-[4.5rem_minmax(0,1fr)_4.5rem] items-center gap-3 rounded-none bg-zinc-800 px-4 py-2"
                         :style="{ '--row-delay': `${700 + index * 75}ms` }"
                     >
                         <div
-                            class="text-center text-3xl font-black text-blue-200 tabular-nums"
+                            class="text-center text-xl font-black text-blue-200 tabular-nums"
                         >
                             {{ displayedBlueStats[stat.score] }}
                         </div>
                         <div
-                            class="text-center text-lg font-black tracking-widest text-white uppercase"
+                            class="text-center text-sm font-black tracking-widest text-white uppercase"
                         >
                             {{ stat.label }}
                             <span class="text-sm text-zinc-400"
@@ -1032,30 +1033,30 @@ const partaiLabel = computed(() => currentMatch.value?.match_code ?? '-');
                             >
                         </div>
                         <div
-                            class="text-center text-3xl font-black text-yellow-300 tabular-nums"
+                            class="text-center text-xl font-black text-yellow-300 tabular-nums"
                         >
                             {{ displayedYellowStats[stat.score] }}
                         </div>
                     </div>
 
                     <div
-                        class="overlay-stat-row grid grid-cols-[6rem_minmax(0,1fr)_6rem] items-center gap-4 rounded-md border border-red-400/25 bg-red-950/30 px-5 py-3"
+                        class="overlay-stat-row grid grid-cols-[4.5rem_minmax(0,1fr)_4.5rem] items-center gap-3 rounded-none bg-zinc-800 px-4 py-2"
                         :style="{
                             '--row-delay': `${700 + scoringStats.length * 75}ms`,
                         }"
                     >
                         <div
-                            class="text-center text-3xl font-black text-red-300 tabular-nums"
+                            class="text-center text-xl font-black text-red-300 tabular-nums"
                         >
                             {{ displayedBlueStats.punishmentPoints }}
                         </div>
                         <div
-                            class="text-center text-lg font-black tracking-widest text-red-200 uppercase"
+                            class="text-center text-sm font-black tracking-widest text-red-200 uppercase"
                         >
                             Hukuman
                         </div>
                         <div
-                            class="text-center text-3xl font-black text-red-300 tabular-nums"
+                            class="text-center text-xl font-black text-red-300 tabular-nums"
                         >
                             {{ displayedYellowStats.punishmentPoints }}
                         </div>
@@ -1063,7 +1064,7 @@ const partaiLabel = computed(() => currentMatch.value?.match_code ?? '-');
 
                     <div
                         v-if="currentMatch?.winner_corner"
-                        class="overlay-winner mt-3 rounded-md border border-white/15 bg-black/40 px-6 py-4 text-center"
+                        class="overlay-winner mt-2 rounded-none bg-zinc-800 px-6 py-3 text-center"
                     >
                         <div
                             class="mb-1 text-xs font-black tracking-widest text-zinc-400 uppercase"
@@ -1072,7 +1073,7 @@ const partaiLabel = computed(() => currentMatch.value?.match_code ?? '-');
                         </div>
                         <div
                             :class="[
-                                'text-4xl font-black tracking-widest uppercase',
+                                'text-3xl font-black tracking-widest uppercase',
                                 currentMatch?.winner_corner === 'blue'
                                     ? 'text-blue-300'
                                     : currentMatch?.winner_corner === 'yellow'
@@ -1094,7 +1095,7 @@ const partaiLabel = computed(() => currentMatch.value?.match_code ?? '-');
                 </div>
 
                 <footer
-                    class="overlay-footer flex h-8 items-center justify-between gap-5 border-t border-white/15 bg-black/60 px-8 text-sm font-black tracking-widest uppercase"
+                    class="overlay-footer flex h-7 items-center justify-between gap-5 bg-black px-6 text-xs font-black tracking-widest uppercase"
                 >
                     <span>{{ categoryLabel }}</span>
                     <span>juarasilat.com</span>
@@ -1107,294 +1108,401 @@ const partaiLabel = computed(() => currentMatch.value?.match_code ?? '-');
 <style scoped>
 .broadcast-status-enter-active,
 .broadcast-status-leave-active {
-    transition:
-        opacity 760ms ease,
-        transform 760ms cubic-bezier(0.16, 1, 0.3, 1),
-        filter 760ms ease;
     transform-origin: center bottom;
 }
 
+.broadcast-status-enter-active {
+    animation: broadcast-scorebug-enter 1650ms cubic-bezier(0.16, 1, 0.3, 1)
+        both;
+}
+
 .broadcast-status-leave-active {
-    transition-duration: 520ms;
+    animation: broadcast-scorebug-exit 1180ms cubic-bezier(0.45, 0, 0.2, 1) both;
     pointer-events: none;
 }
 
-.broadcast-status-enter-from {
-    opacity: 0;
-    transform: translateY(28px) scale(0.982);
-    filter: blur(8px);
-}
-
+.broadcast-status-enter-from,
 .broadcast-status-enter-to,
-.broadcast-status-leave-from {
-    opacity: 1;
-    transform: translateY(0) scale(1);
-    filter: blur(0);
-}
-
+.broadcast-status-leave-from,
 .broadcast-status-leave-to {
-    opacity: 0;
-    transform: translateY(-18px) scale(0.988);
-    filter: blur(6px);
+    transform-origin: center bottom;
 }
 
-.broadcast-status-leave-active.overlay-shell,
 .broadcast-status-leave-active .overlay-shell {
-    animation: overlay-shell-out 520ms cubic-bezier(0.7, 0, 0.84, 0) both;
+    animation: overlay-shell-out 1180ms cubic-bezier(0.45, 0, 0.2, 1) both;
 }
 
 .broadcast-status-leave-active .overlay-topbar,
 .broadcast-status-leave-active .overlay-footer {
-    animation: overlay-strip-out 420ms cubic-bezier(0.7, 0, 0.84, 0) both;
+    animation: overlay-strip-out 940ms cubic-bezier(0.45, 0, 0.2, 1) both;
 }
 
 .broadcast-status-leave-active .overlay-blue {
-    animation: overlay-blue-out 460ms cubic-bezier(0.7, 0, 0.84, 0) both;
+    animation: overlay-blue-out 1020ms cubic-bezier(0.45, 0, 0.2, 1) both;
 }
 
 .broadcast-status-leave-active .overlay-yellow {
-    animation: overlay-yellow-out 460ms cubic-bezier(0.7, 0, 0.84, 0) both;
+    animation: overlay-yellow-out 1020ms cubic-bezier(0.45, 0, 0.2, 1) both;
 }
 
 .broadcast-status-leave-active .overlay-center {
-    animation: overlay-center-out 420ms cubic-bezier(0.7, 0, 0.84, 0) both;
+    animation: overlay-center-out 940ms cubic-bezier(0.45, 0, 0.2, 1) both;
 }
 
 .broadcast-status-leave-active .overlay-score {
-    animation: overlay-score-out 360ms cubic-bezier(0.7, 0, 0.84, 0) both;
+    animation: overlay-score-out 820ms cubic-bezier(0.45, 0, 0.2, 1) both;
+}
+
+.broadcast-status-leave-active .overlay-score-card {
+    animation: overlay-score-card-out 780ms cubic-bezier(0.45, 0, 0.2, 1) both;
 }
 
 .broadcast-status-leave-active .overlay-stat-row,
 .broadcast-status-leave-active .overlay-winner {
-    animation: overlay-stat-row-out 360ms cubic-bezier(0.7, 0, 0.84, 0) both;
+    animation: overlay-stat-row-out 820ms cubic-bezier(0.45, 0, 0.2, 1) both;
 }
 
 .overlay-shell {
-    animation: overlay-shell-in 980ms cubic-bezier(0.16, 1, 0.3, 1) both;
+    animation: overlay-shell-in 1650ms cubic-bezier(0.16, 1, 0.3, 1) both;
     transform-origin: center bottom;
 }
 
 .overlay-topbar {
-    animation: overlay-drop-in 820ms cubic-bezier(0.16, 1, 0.3, 1) 160ms both;
+    animation: overlay-topbar-in 1250ms cubic-bezier(0.16, 1, 0.3, 1) 140ms both;
 }
 
 .overlay-yellow {
-    animation: overlay-yellow-in 960ms cubic-bezier(0.16, 1, 0.3, 1) 260ms both;
+    animation: overlay-yellow-in 1450ms cubic-bezier(0.16, 1, 0.3, 1) 420ms both;
     transform-origin: right center;
 }
 
 .overlay-blue {
-    animation: overlay-blue-in 960ms cubic-bezier(0.16, 1, 0.3, 1) 320ms both;
+    animation: overlay-blue-in 1450ms cubic-bezier(0.16, 1, 0.3, 1) 340ms both;
     transform-origin: left center;
 }
 
 .overlay-center {
-    animation: overlay-center-in 860ms cubic-bezier(0.16, 1, 0.3, 1) 430ms both;
+    animation: overlay-center-in 1300ms cubic-bezier(0.16, 1, 0.3, 1) 560ms both;
 }
 
 .overlay-score {
-    animation: overlay-score-pop 820ms cubic-bezier(0.16, 1, 0.3, 1) 560ms both;
+    animation: overlay-score-pop 1180ms cubic-bezier(0.16, 1, 0.3, 1) 780ms both;
+}
+
+.overlay-score-card {
+    animation: overlay-score-card-in 1050ms cubic-bezier(0.16, 1, 0.3, 1) 1120ms
+        both;
+    transform-origin: center center;
+}
+
+.overlay-score-card-blue {
+    --score-card-start: 5rem;
+    --score-card-overshoot: -0.35rem;
+}
+
+.overlay-score-card-yellow {
+    --score-card-start: -5rem;
+    --score-card-overshoot: 0.35rem;
 }
 
 .overlay-footer {
-    animation: overlay-footer-in 760ms cubic-bezier(0.16, 1, 0.3, 1) 640ms both;
+    animation: overlay-footer-in 1100ms cubic-bezier(0.16, 1, 0.3, 1) 860ms both;
 }
 
 .overlay-stat-row {
-    animation: overlay-stat-row-in 720ms cubic-bezier(0.16, 1, 0.3, 1)
+    animation: overlay-stat-row-in 1100ms cubic-bezier(0.16, 1, 0.3, 1)
         var(--row-delay, 700ms) both;
 }
 
 .overlay-winner {
-    animation: overlay-score-pop 860ms cubic-bezier(0.16, 1, 0.3, 1) 1120ms both;
+    animation: overlay-score-pop 1180ms cubic-bezier(0.16, 1, 0.3, 1) 1320ms
+        both;
+}
+
+@keyframes broadcast-scorebug-enter {
+    0% {
+        clip-path: inset(0 50% 0 50%);
+        transform: translateY(16px) scaleX(0.96);
+    }
+
+    42% {
+        clip-path: inset(0 18% 0 18%);
+        transform: translateY(0) scaleX(1.03);
+    }
+
+    72% {
+        clip-path: inset(0 0 0 0);
+        transform: translateY(0) scaleX(1.01);
+    }
+
+    100% {
+        clip-path: inset(0 0 0 0);
+        transform: translateY(0) scaleX(1);
+    }
+}
+
+@keyframes broadcast-scorebug-exit {
+    0% {
+        clip-path: inset(0 0 0 0);
+        transform: translateY(0) scaleX(1);
+    }
+
+    38% {
+        clip-path: inset(0 8% 0 8%);
+        transform: translateY(-4px) scaleX(1.02);
+    }
+
+    100% {
+        clip-path: inset(0 50% 0 50%);
+        transform: translateY(16px) scaleX(0.94);
+    }
 }
 
 @keyframes overlay-shell-in {
-    from {
-        opacity: 0;
-        transform: translateY(24px) scaleX(0.97);
-        filter: blur(5px);
+    0% {
+        clip-path: inset(0 48% 0 48%);
+        transform: translateY(20px) scaleY(0.86);
     }
 
-    to {
-        opacity: 1;
-        transform: translateY(0) scaleX(1);
-        filter: blur(0);
+    44% {
+        clip-path: inset(0 12% 0 12%);
+        transform: translateY(0) scaleY(1.08);
+    }
+
+    100% {
+        clip-path: inset(0 0 0 0);
+        transform: translateY(0) scaleY(1);
     }
 }
 
 @keyframes overlay-shell-out {
-    from {
-        opacity: 1;
-        transform: translateY(0) scaleX(1);
-        filter: blur(0);
+    0% {
+        clip-path: inset(0 0 0 0);
+        transform: translateY(0) scaleY(1);
     }
 
-    to {
-        opacity: 0;
-        transform: translateY(-18px) scaleX(0.985);
-        filter: blur(6px);
+    100% {
+        clip-path: inset(0 52% 0 52%);
+        transform: translateY(16px) scaleY(0.9);
     }
 }
 
-@keyframes overlay-drop-in {
-    from {
-        opacity: 0;
-        transform: translateY(-45%);
+@keyframes overlay-topbar-in {
+    0% {
+        clip-path: inset(0 100% 0 0);
+        transform: translateX(-18px);
     }
 
-    to {
-        opacity: 1;
-        transform: translateY(0);
-    }
-}
-
-@keyframes overlay-yellow-in {
-    from {
-        opacity: 0;
-        transform: translateX(36px) scaleX(0.97);
+    55% {
+        clip-path: inset(0 0 0 0);
+        transform: translateX(8px);
     }
 
-    to {
-        opacity: 1;
-        transform: translateX(0) scaleX(1);
+    100% {
+        clip-path: inset(0 0 0 0);
+        transform: translateX(0);
     }
 }
 
-@keyframes overlay-yellow-out {
-    from {
-        opacity: 1;
-        transform: translateX(0) scaleX(1);
+@keyframes overlay-footer-in {
+    0% {
+        clip-path: inset(0 0 0 100%);
+        transform: translateX(18px);
     }
 
-    to {
-        opacity: 0;
-        transform: translateX(30px) scaleX(0.98);
+    55% {
+        clip-path: inset(0 0 0 0);
+        transform: translateX(-8px);
+    }
+
+    100% {
+        clip-path: inset(0 0 0 0);
+        transform: translateX(0);
+    }
+}
+
+@keyframes overlay-strip-out {
+    0% {
+        clip-path: inset(0 0 0 0);
+        transform: translateX(0);
+    }
+
+    100% {
+        clip-path: inset(0 50% 0 50%);
+        transform: translateX(12px);
     }
 }
 
 @keyframes overlay-blue-in {
-    from {
-        opacity: 0;
-        transform: translateX(-36px) scaleX(0.97);
+    0% {
+        clip-path: inset(0 100% 0 0);
+        transform: translateX(-16px);
     }
 
-    to {
-        opacity: 1;
-        transform: translateX(0) scaleX(1);
+    68% {
+        clip-path: inset(0 0 0 0);
+        transform: translateX(4px);
+    }
+
+    100% {
+        clip-path: inset(0 0 0 0);
+        transform: translateX(0);
     }
 }
 
 @keyframes overlay-blue-out {
-    from {
-        opacity: 1;
-        transform: translateX(0) scaleX(1);
+    0% {
+        clip-path: inset(0 0 0 0);
+        transform: translateX(0);
     }
 
-    to {
-        opacity: 0;
-        transform: translateX(-30px) scaleX(0.98);
+    100% {
+        clip-path: inset(0 100% 0 0);
+        transform: translateX(-16px);
+    }
+}
+
+@keyframes overlay-yellow-in {
+    0% {
+        clip-path: inset(0 0 0 100%);
+        transform: translateX(16px);
+    }
+
+    68% {
+        clip-path: inset(0 0 0 0);
+        transform: translateX(-4px);
+    }
+
+    100% {
+        clip-path: inset(0 0 0 0);
+        transform: translateX(0);
+    }
+}
+
+@keyframes overlay-yellow-out {
+    0% {
+        clip-path: inset(0 0 0 0);
+        transform: translateX(0);
+    }
+
+    100% {
+        clip-path: inset(0 0 0 100%);
+        transform: translateX(16px);
     }
 }
 
 @keyframes overlay-center-in {
-    from {
-        opacity: 0;
-        transform: scaleY(0.94);
+    0% {
+        clip-path: inset(50% 0 50% 0);
+        transform: scaleX(0.72) rotateX(14deg);
     }
 
-    to {
-        opacity: 1;
-        transform: scaleY(1);
+    58% {
+        clip-path: inset(0 0 0 0);
+        transform: scaleX(1.08) rotateX(0);
+    }
+
+    100% {
+        clip-path: inset(0 0 0 0);
+        transform: scaleX(1) rotateX(0);
     }
 }
 
 @keyframes overlay-center-out {
-    from {
-        opacity: 1;
-        transform: scaleY(1);
+    0% {
+        clip-path: inset(0 0 0 0);
+        transform: scaleX(1) rotateX(0);
     }
 
-    to {
-        opacity: 0;
-        transform: scaleY(0.92);
+    100% {
+        clip-path: inset(50% 0 50% 0);
+        transform: scaleX(0.72) rotateX(12deg);
     }
 }
 
 @keyframes overlay-score-pop {
-    from {
-        opacity: 0;
-        transform: scale(0.82);
+    0% {
+        transform: scale(0.64) rotateX(18deg);
     }
 
-    72% {
-        opacity: 1;
-        transform: scale(1.02);
+    54% {
+        transform: scale(1.18) rotateX(0);
     }
 
-    to {
-        opacity: 1;
+    76% {
+        transform: scale(0.94);
+    }
+
+    100% {
         transform: scale(1);
     }
 }
 
 @keyframes overlay-score-out {
-    from {
-        opacity: 1;
-        transform: scale(1);
+    0% {
+        transform: scale(1) rotateX(0);
     }
 
-    to {
-        opacity: 0;
-        transform: scale(0.9);
+    100% {
+        transform: scale(0.72) rotateX(18deg);
     }
 }
 
-@keyframes overlay-footer-in {
-    from {
-        opacity: 0;
-        transform: translateY(45%);
+@keyframes overlay-score-card-in {
+    0% {
+        clip-path: inset(0 50% 0 50%);
+        transform: translateX(var(--score-card-start)) scaleX(0.54);
     }
 
-    to {
-        opacity: 1;
-        transform: translateY(0);
+    64% {
+        clip-path: inset(0 0 0 0);
+        transform: translateX(var(--score-card-overshoot)) scaleX(1.04);
+    }
+
+    100% {
+        clip-path: inset(0 0 0 0);
+        transform: translateX(0) scaleX(1);
     }
 }
 
-@keyframes overlay-strip-out {
-    from {
-        opacity: 1;
-        transform: translateY(0);
+@keyframes overlay-score-card-out {
+    0% {
+        clip-path: inset(0 0 0 0);
+        transform: translateX(0) scaleX(1);
     }
 
-    to {
-        opacity: 0;
-        transform: translateY(35%);
+    100% {
+        clip-path: inset(0 50% 0 50%);
+        transform: translateX(var(--score-card-start)) scaleX(0.54);
     }
 }
 
 @keyframes overlay-stat-row-in {
-    from {
-        opacity: 0;
-        transform: translateX(-12px);
+    0% {
+        clip-path: inset(0 100% 0 0);
+        transform: translateX(-18px);
     }
 
-    to {
-        opacity: 1;
+    62% {
+        clip-path: inset(0 0 0 0);
+        transform: translateX(5px);
+    }
+
+    100% {
+        clip-path: inset(0 0 0 0);
         transform: translateX(0);
     }
 }
 
 @keyframes overlay-stat-row-out {
-    from {
-        opacity: 1;
+    0% {
+        clip-path: inset(0 0 0 0);
         transform: translateX(0);
     }
 
-    to {
-        opacity: 0;
-        transform: translateX(10px);
+    100% {
+        clip-path: inset(0 0 0 100%);
+        transform: translateX(14px);
     }
 }
 </style>

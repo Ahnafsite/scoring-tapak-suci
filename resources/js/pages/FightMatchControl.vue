@@ -1046,35 +1046,6 @@ onUnmounted(() => {
                                 <p
                                     :class="[
                                         'line-clamp-2 text-sm leading-relaxed font-semibold uppercase transition-all',
-                                        match.winner_corner === 'blue' &&
-                                        match.status === 'done'
-                                            ? 'text-yellow-400/50 line-through'
-                                            : 'text-yellow-400',
-                                    ]"
-                                >
-                                    {{ match.athlete_yellow || '-' }}
-                                </p>
-                                <p
-                                    :class="[
-                                        'mt-0.5 line-clamp-2 text-[12px] uppercase transition-all',
-                                        match.winner_corner === 'blue' &&
-                                        match.status === 'done'
-                                            ? 'text-white/50 line-through'
-                                            : 'text-white',
-                                    ]"
-                                >
-                                    {{ match.contingent_yellow || 'Kontingen' }}
-                                </p>
-                            </div>
-                            <div
-                                class="shrink-0 px-1.5 pt-0.5 text-[10px] font-bold text-muted-foreground/50 italic"
-                            >
-                                VS
-                            </div>
-                            <div class="min-w-0 flex-1 text-left">
-                                <p
-                                    :class="[
-                                        'line-clamp-2 text-sm leading-relaxed font-semibold uppercase transition-all',
                                         match.winner_corner === 'yellow' &&
                                         match.status === 'done'
                                             ? 'text-blue-400/50 line-through'
@@ -1093,6 +1064,35 @@ onUnmounted(() => {
                                     ]"
                                 >
                                     {{ match.contingent_blue || 'Kontingen' }}
+                                </p>
+                            </div>
+                            <div
+                                class="shrink-0 px-1.5 pt-0.5 text-[10px] font-bold text-muted-foreground/50 italic"
+                            >
+                                VS
+                            </div>
+                            <div class="min-w-0 flex-1 text-left">
+                                <p
+                                    :class="[
+                                        'line-clamp-2 text-sm leading-relaxed font-semibold uppercase transition-all',
+                                        match.winner_corner === 'blue' &&
+                                        match.status === 'done'
+                                            ? 'text-yellow-400/50 line-through'
+                                            : 'text-yellow-400',
+                                    ]"
+                                >
+                                    {{ match.athlete_yellow || '-' }}
+                                </p>
+                                <p
+                                    :class="[
+                                        'mt-0.5 line-clamp-2 text-[12px] uppercase transition-all',
+                                        match.winner_corner === 'blue' &&
+                                        match.status === 'done'
+                                            ? 'text-white/50 line-through'
+                                            : 'text-white',
+                                    ]"
+                                >
+                                    {{ match.contingent_yellow || 'Kontingen' }}
                                 </p>
                             </div>
                         </div>
@@ -1155,39 +1155,37 @@ onUnmounted(() => {
                     <div
                         class="flex flex-1 overflow-hidden rounded-2xl border border-stone-800 shadow-2xl"
                     >
-                        <!-- Yellow Corner Card -->
+                        <!-- Blue Corner Card -->
                         <div
                             :class="[
                                 'relative flex flex-1 flex-col items-center justify-center gap-2 p-8 text-center transition-colors duration-500',
-                                activeMainCorner === 'yellow' ||
+                                activeMainCorner === 'blue' ||
                                 activeMainCorner === 'draw'
-                                    ? 'bg-yellow-400'
+                                    ? 'bg-blue-600'
                                     : 'bg-zinc-900 opacity-80 grayscale',
                             ]"
                         >
                             <h2
                                 :class="[
                                     'mb-1 text-4xl font-black tracking-wider uppercase drop-shadow-sm',
-                                    activeMainCorner === 'yellow' ||
+                                    activeMainCorner === 'blue' ||
                                     activeMainCorner === 'draw'
-                                        ? 'text-black'
-                                        : 'text-yellow-400',
+                                        ? 'text-white'
+                                        : 'text-blue-400',
                                 ]"
                             >
-                                {{ currentMatchDetail.atlete_yellow || '-' }}
+                                {{ currentMatchDetail.atlete_blue || '-' }}
                             </h2>
                             <p
                                 :class="[
                                     'text-xl font-bold uppercase',
-                                    activeMainCorner === 'yellow' ||
+                                    activeMainCorner === 'blue' ||
                                     activeMainCorner === 'draw'
-                                        ? 'text-black/80'
+                                        ? 'text-blue-100'
                                         : 'text-white',
                                 ]"
                             >
-                                {{
-                                    currentMatchDetail.contingent_yellow || '-'
-                                }}
+                                {{ currentMatchDetail.contingent_blue || '-' }}
                             </p>
 
                             <!-- Weight and Status Badge -->
@@ -1195,26 +1193,24 @@ onUnmounted(() => {
                                 <span
                                     :class="[
                                         'text-4xl font-black tabular-nums',
-                                        activeMainCorner === 'yellow' ||
+                                        activeMainCorner === 'blue' ||
                                         activeMainCorner === 'draw'
-                                            ? 'text-black'
-                                            : 'text-yellow-100',
+                                            ? 'text-white'
+                                            : 'text-blue-100',
                                     ]"
                                 >
-                                    {{ currentMatchDetail.weight_yellow }} KG
+                                    {{ currentMatchDetail.weight_blue }} KG
                                 </span>
                                 <Badge
                                     :class="[
-                                        activeMainCorner === 'yellow' ||
+                                        activeMainCorner === 'blue' ||
                                         activeMainCorner === 'draw'
-                                            ? 'bg-black text-yellow-400'
-                                            : 'bg-yellow-500 text-black',
-                                        'pointer-events-none font-bold tracking-widest uppercase hover:bg-black',
+                                            ? 'bg-black text-blue-400 hover:bg-black'
+                                            : 'bg-blue-500 text-white hover:bg-blue-500',
+                                        'pointer-events-none font-bold tracking-widest uppercase',
                                     ]"
                                 >
-                                    {{
-                                        currentMatchDetail.weight_status_yellow
-                                    }}
+                                    {{ currentMatchDetail.weight_status_blue }}
                                 </Badge>
                             </div>
 
@@ -1222,15 +1218,13 @@ onUnmounted(() => {
                                 <div
                                     :class="[
                                         'text-[12rem] font-black drop-shadow-sm',
-                                        activeMainCorner === 'yellow' ||
+                                        activeMainCorner === 'blue' ||
                                         activeMainCorner === 'draw'
-                                            ? 'text-black'
-                                            : 'text-yellow-500',
+                                            ? 'text-white'
+                                            : 'text-blue-500',
                                     ]"
                                 >
-                                    {{
-                                        activeRoundRecap?.total_poin_yellow || 0
-                                    }}
+                                    {{ activeRoundRecap?.total_poin_blue || 0 }}
                                 </div>
                             </div>
                         </div>
@@ -1445,37 +1439,39 @@ onUnmounted(() => {
                             </div>
                         </div>
 
-                        <!-- Blue Corner Card -->
+                        <!-- Yellow Corner Card -->
                         <div
                             :class="[
                                 'relative flex flex-1 flex-col items-center justify-center gap-2 p-8 text-center transition-colors duration-500',
-                                activeMainCorner === 'blue' ||
+                                activeMainCorner === 'yellow' ||
                                 activeMainCorner === 'draw'
-                                    ? 'bg-blue-600'
+                                    ? 'bg-yellow-400'
                                     : 'bg-zinc-900 opacity-80 grayscale',
                             ]"
                         >
                             <h2
                                 :class="[
                                     'mb-1 text-4xl font-black tracking-wider uppercase drop-shadow-sm',
-                                    activeMainCorner === 'blue' ||
+                                    activeMainCorner === 'yellow' ||
                                     activeMainCorner === 'draw'
-                                        ? 'text-white'
-                                        : 'text-blue-400',
+                                        ? 'text-black'
+                                        : 'text-yellow-400',
                                 ]"
                             >
-                                {{ currentMatchDetail.atlete_blue || '-' }}
+                                {{ currentMatchDetail.atlete_yellow || '-' }}
                             </h2>
                             <p
                                 :class="[
                                     'text-xl font-bold uppercase',
-                                    activeMainCorner === 'blue' ||
+                                    activeMainCorner === 'yellow' ||
                                     activeMainCorner === 'draw'
-                                        ? 'text-blue-100'
+                                        ? 'text-black/80'
                                         : 'text-white',
                                 ]"
                             >
-                                {{ currentMatchDetail.contingent_blue || '-' }}
+                                {{
+                                    currentMatchDetail.contingent_yellow || '-'
+                                }}
                             </p>
 
                             <!-- Weight and Status Badge -->
@@ -1483,24 +1479,26 @@ onUnmounted(() => {
                                 <span
                                     :class="[
                                         'text-4xl font-black tabular-nums',
-                                        activeMainCorner === 'blue' ||
+                                        activeMainCorner === 'yellow' ||
                                         activeMainCorner === 'draw'
-                                            ? 'text-white'
-                                            : 'text-blue-100',
+                                            ? 'text-black'
+                                            : 'text-yellow-100',
                                     ]"
                                 >
-                                    {{ currentMatchDetail.weight_blue }} KG
+                                    {{ currentMatchDetail.weight_yellow }} KG
                                 </span>
                                 <Badge
                                     :class="[
-                                        activeMainCorner === 'blue' ||
+                                        activeMainCorner === 'yellow' ||
                                         activeMainCorner === 'draw'
-                                            ? 'bg-black text-blue-400 hover:bg-black'
-                                            : 'bg-blue-500 text-white hover:bg-blue-500',
-                                        'pointer-events-none font-bold tracking-widest uppercase',
+                                            ? 'bg-black text-yellow-400'
+                                            : 'bg-yellow-500 text-black',
+                                        'pointer-events-none font-bold tracking-widest uppercase hover:bg-black',
                                     ]"
                                 >
-                                    {{ currentMatchDetail.weight_status_blue }}
+                                    {{
+                                        currentMatchDetail.weight_status_yellow
+                                    }}
                                 </Badge>
                             </div>
 
@@ -1508,13 +1506,15 @@ onUnmounted(() => {
                                 <div
                                     :class="[
                                         'text-[12rem] font-black drop-shadow-sm',
-                                        activeMainCorner === 'blue' ||
+                                        activeMainCorner === 'yellow' ||
                                         activeMainCorner === 'draw'
-                                            ? 'text-white'
-                                            : 'text-blue-500',
+                                            ? 'text-black'
+                                            : 'text-yellow-500',
                                     ]"
                                 >
-                                    {{ activeRoundRecap?.total_poin_blue || 0 }}
+                                    {{
+                                        activeRoundRecap?.total_poin_yellow || 0
+                                    }}
                                 </div>
                             </div>
                         </div>
@@ -1543,45 +1543,47 @@ onUnmounted(() => {
                         >
                             <!-- PW 1 -->
                             <div
-                                class="border-r border-stone-800 bg-yellow-400/20 py-1.5 text-yellow-500"
-                            >
-                                Kuning
-                            </div>
-                            <div
                                 class="border-r border-stone-800 bg-blue-600/20 py-1.5 text-blue-400"
                             >
                                 Biru
+                            </div>
+                            <div
+                                class="border-r border-stone-800 bg-yellow-400/20 py-1.5 text-yellow-500"
+                            >
+                                Kuning
                             </div>
                             <!-- PW 2 -->
                             <div
-                                class="border-r border-stone-800 bg-yellow-400/20 py-1.5 text-yellow-500"
-                            >
-                                Kuning
-                            </div>
-                            <div
                                 class="border-r border-stone-800 bg-blue-600/20 py-1.5 text-blue-400"
                             >
                                 Biru
+                            </div>
+                            <div
+                                class="border-r border-stone-800 bg-yellow-400/20 py-1.5 text-yellow-500"
+                            >
+                                Kuning
                             </div>
                             <!-- PW 3 -->
                             <div
+                                class="border-r border-stone-800 bg-blue-600/20 py-1.5 text-blue-400"
+                            >
+                                Biru
+                            </div>
+                            <div
                                 class="border-r border-stone-800 bg-yellow-400/20 py-1.5 text-yellow-500"
                             >
                                 Kuning
                             </div>
+                            <!-- PW 4 -->
                             <div
                                 class="border-r border-stone-800 bg-blue-600/20 py-1.5 text-blue-400"
                             >
                                 Biru
                             </div>
-                            <!-- PW 4 -->
                             <div
-                                class="border-r border-stone-800 bg-yellow-400/20 py-1.5 text-yellow-500"
+                                class="bg-yellow-400/20 py-1.5 text-yellow-500"
                             >
                                 Kuning
-                            </div>
-                            <div class="bg-blue-600/20 py-1.5 text-blue-400">
-                                Biru
                             </div>
                         </div>
                         <!-- Body Values -->
@@ -1589,6 +1591,19 @@ onUnmounted(() => {
                             class="relative grid grid-cols-8 text-center text-3xl font-black tabular-nums transition-colors duration-300"
                         >
                             <!-- PW 1 -->
+                            <div
+                                :class="[
+                                    'border-r border-stone-800 py-3',
+                                    activeRoundRecap?.jury_one_winner === 'blue'
+                                        ? 'bg-blue-600 text-white shadow-inner'
+                                        : 'bg-black text-white',
+                                ]"
+                            >
+                                {{
+                                    activeRoundRecap?.jury_one_total_poin_blue ??
+                                    '0'
+                                }}
+                            </div>
                             <div
                                 :class="[
                                     'border-r border-stone-800 py-3',
@@ -1603,20 +1618,20 @@ onUnmounted(() => {
                                     '0'
                                 }}
                             </div>
+                            <!-- PW 2 -->
                             <div
                                 :class="[
                                     'border-r border-stone-800 py-3',
-                                    activeRoundRecap?.jury_one_winner === 'blue'
+                                    activeRoundRecap?.jury_two_winner === 'blue'
                                         ? 'bg-blue-600 text-white shadow-inner'
                                         : 'bg-black text-white',
                                 ]"
                             >
                                 {{
-                                    activeRoundRecap?.jury_one_total_poin_blue ??
+                                    activeRoundRecap?.jury_two_total_poin_blue ??
                                     '0'
                                 }}
                             </div>
-                            <!-- PW 2 -->
                             <div
                                 :class="[
                                     'border-r border-stone-800 py-3',
@@ -1631,34 +1646,7 @@ onUnmounted(() => {
                                     '0'
                                 }}
                             </div>
-                            <div
-                                :class="[
-                                    'border-r border-stone-800 py-3',
-                                    activeRoundRecap?.jury_two_winner === 'blue'
-                                        ? 'bg-blue-600 text-white shadow-inner'
-                                        : 'bg-black text-white',
-                                ]"
-                            >
-                                {{
-                                    activeRoundRecap?.jury_two_total_poin_blue ??
-                                    '0'
-                                }}
-                            </div>
                             <!-- PW 3 -->
-                            <div
-                                :class="[
-                                    'border-r border-stone-800 py-3',
-                                    activeRoundRecap?.jury_three_winner ===
-                                    'yellow'
-                                        ? 'bg-yellow-400 text-black shadow-inner'
-                                        : 'bg-black text-white',
-                                ]"
-                            >
-                                {{
-                                    activeRoundRecap?.jury_three_total_poin_yellow ??
-                                    '0'
-                                }}
-                            </div>
                             <div
                                 :class="[
                                     'border-r border-stone-800 py-3',
@@ -1673,24 +1661,24 @@ onUnmounted(() => {
                                     '0'
                                 }}
                             </div>
-                            <!-- PW 4 -->
                             <div
                                 :class="[
                                     'border-r border-stone-800 py-3',
-                                    activeRoundRecap?.jury_four_winner ===
+                                    activeRoundRecap?.jury_three_winner ===
                                     'yellow'
                                         ? 'bg-yellow-400 text-black shadow-inner'
                                         : 'bg-black text-white',
                                 ]"
                             >
                                 {{
-                                    activeRoundRecap?.jury_four_total_poin_yellow ??
+                                    activeRoundRecap?.jury_three_total_poin_yellow ??
                                     '0'
                                 }}
                             </div>
+                            <!-- PW 4 -->
                             <div
                                 :class="[
-                                    'py-3',
+                                    'border-r border-stone-800 py-3',
                                     activeRoundRecap?.jury_four_winner ===
                                     'blue'
                                         ? 'bg-blue-600 text-white shadow-inner'
@@ -1699,6 +1687,20 @@ onUnmounted(() => {
                             >
                                 {{
                                     activeRoundRecap?.jury_four_total_poin_blue ??
+                                    '0'
+                                }}
+                            </div>
+                            <div
+                                :class="[
+                                    'py-3',
+                                    activeRoundRecap?.jury_four_winner ===
+                                    'yellow'
+                                        ? 'bg-yellow-400 text-black shadow-inner'
+                                        : 'bg-black text-white',
+                                ]"
+                            >
+                                {{
+                                    activeRoundRecap?.jury_four_total_poin_yellow ??
                                     '0'
                                 }}
                             </div>
@@ -2230,28 +2232,28 @@ onUnmounted(() => {
 
                 <div class="grid grid-cols-3 gap-3 py-4">
                     <div
-                        @click="selectedRoundWinner = 'yellow'"
+                        @click="selectedRoundWinner = 'blue'"
                         :class="[
                             'flex cursor-pointer flex-col items-center justify-center rounded-xl border-2 p-4 transition-all',
-                            selectedRoundWinner === 'yellow'
-                                ? 'border-yellow-500 bg-yellow-500/20'
-                                : 'border-stone-800 hover:border-yellow-500/50',
+                            selectedRoundWinner === 'blue'
+                                ? 'border-blue-500 bg-blue-600/20'
+                                : 'border-stone-800 hover:border-blue-500/50',
                         ]"
                     >
                         <div
                             :class="[
                                 'mb-2 flex h-4 w-4 items-center justify-center rounded-full border',
-                                selectedRoundWinner === 'yellow'
-                                    ? 'border-yellow-500 bg-yellow-500/20'
+                                selectedRoundWinner === 'blue'
+                                    ? 'border-blue-500 bg-blue-600/20'
                                     : 'border-stone-600',
                             ]"
                         >
                             <div
-                                v-if="selectedRoundWinner === 'yellow'"
-                                class="h-2 w-2 rounded-full bg-yellow-500"
+                                v-if="selectedRoundWinner === 'blue'"
+                                class="h-2 w-2 rounded-full bg-blue-500"
                             ></div>
                         </div>
-                        <span class="font-bold text-yellow-500">Kuning</span>
+                        <span class="font-bold text-blue-400">Biru</span>
                     </div>
 
                     <div
@@ -2280,28 +2282,28 @@ onUnmounted(() => {
                     </div>
 
                     <div
-                        @click="selectedRoundWinner = 'blue'"
+                        @click="selectedRoundWinner = 'yellow'"
                         :class="[
                             'flex cursor-pointer flex-col items-center justify-center rounded-xl border-2 p-4 transition-all',
-                            selectedRoundWinner === 'blue'
-                                ? 'border-blue-500 bg-blue-600/20'
-                                : 'border-stone-800 hover:border-blue-500/50',
+                            selectedRoundWinner === 'yellow'
+                                ? 'border-yellow-500 bg-yellow-500/20'
+                                : 'border-stone-800 hover:border-yellow-500/50',
                         ]"
                     >
                         <div
                             :class="[
                                 'mb-2 flex h-4 w-4 items-center justify-center rounded-full border',
-                                selectedRoundWinner === 'blue'
-                                    ? 'border-blue-500 bg-blue-600/20'
+                                selectedRoundWinner === 'yellow'
+                                    ? 'border-yellow-500 bg-yellow-500/20'
                                     : 'border-stone-600',
                             ]"
                         >
                             <div
-                                v-if="selectedRoundWinner === 'blue'"
-                                class="h-2 w-2 rounded-full bg-blue-500"
+                                v-if="selectedRoundWinner === 'yellow'"
+                                class="h-2 w-2 rounded-full bg-yellow-500"
                             ></div>
                         </div>
-                        <span class="font-bold text-blue-400">Biru</span>
+                        <span class="font-bold text-yellow-500">Kuning</span>
                     </div>
                 </div>
 
@@ -2380,29 +2382,29 @@ onUnmounted(() => {
                         <h4 class="mb-2 text-sm font-bold">Pilih Pemenang</h4>
                         <div class="grid grid-cols-3 gap-3">
                             <div
-                                @click="selectedMatchWinner = 'yellow'"
+                                @click="selectedMatchWinner = 'blue'"
                                 :class="[
                                     'flex cursor-pointer flex-col items-center justify-center rounded-xl border-2 p-4 transition-all',
-                                    selectedMatchWinner === 'yellow'
-                                        ? 'border-yellow-500 bg-yellow-500/20'
-                                        : 'border-stone-800 hover:border-yellow-500/50',
+                                    selectedMatchWinner === 'blue'
+                                        ? 'border-blue-500 bg-blue-500/20'
+                                        : 'border-stone-800 hover:border-blue-500/50',
                                 ]"
                             >
                                 <div
                                     :class="[
                                         'mb-2 flex h-4 w-4 items-center justify-center rounded-full border',
-                                        selectedMatchWinner === 'yellow'
-                                            ? 'border-yellow-500 bg-yellow-500/20'
+                                        selectedMatchWinner === 'blue'
+                                            ? 'border-blue-500 bg-blue-500/20'
                                             : 'border-stone-600',
                                     ]"
                                 >
                                     <div
-                                        v-if="selectedMatchWinner === 'yellow'"
-                                        class="h-2 w-2 rounded-full bg-yellow-500"
+                                        v-if="selectedMatchWinner === 'blue'"
+                                        class="h-2 w-2 rounded-full bg-blue-500"
                                     ></div>
                                 </div>
-                                <span class="font-bold text-yellow-500"
-                                    >Kuning</span
+                                <span class="font-bold text-blue-400"
+                                    >Biru</span
                                 >
                             </div>
 
@@ -2434,29 +2436,29 @@ onUnmounted(() => {
                             </div>
 
                             <div
-                                @click="selectedMatchWinner = 'blue'"
+                                @click="selectedMatchWinner = 'yellow'"
                                 :class="[
                                     'flex cursor-pointer flex-col items-center justify-center rounded-xl border-2 p-4 transition-all',
-                                    selectedMatchWinner === 'blue'
-                                        ? 'border-blue-500 bg-blue-500/20'
-                                        : 'border-stone-800 hover:border-blue-500/50',
+                                    selectedMatchWinner === 'yellow'
+                                        ? 'border-yellow-500 bg-yellow-500/20'
+                                        : 'border-stone-800 hover:border-yellow-500/50',
                                 ]"
                             >
                                 <div
                                     :class="[
                                         'mb-2 flex h-4 w-4 items-center justify-center rounded-full border',
-                                        selectedMatchWinner === 'blue'
-                                            ? 'border-blue-500 bg-blue-500/20'
+                                        selectedMatchWinner === 'yellow'
+                                            ? 'border-yellow-500 bg-yellow-500/20'
                                             : 'border-stone-600',
                                     ]"
                                 >
                                     <div
-                                        v-if="selectedMatchWinner === 'blue'"
-                                        class="h-2 w-2 rounded-full bg-blue-500"
+                                        v-if="selectedMatchWinner === 'yellow'"
+                                        class="h-2 w-2 rounded-full bg-yellow-500"
                                     ></div>
                                 </div>
-                                <span class="font-bold text-blue-400"
-                                    >Biru</span
+                                <span class="font-bold text-yellow-500"
+                                    >Kuning</span
                                 >
                             </div>
                         </div>
