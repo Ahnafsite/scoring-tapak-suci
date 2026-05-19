@@ -999,41 +999,45 @@ const partaiLabel = computed(() => currentMatch.value?.match_code ?? '-');
                     >
                         <div
                             :class="[
-                                'relative flex min-w-0 flex-col items-center justify-center gap-3 p-9 text-center transition-colors duration-500',
+                                'relative flex min-w-0 flex-col items-center justify-center overflow-hidden p-9 text-center transition-colors duration-500',
                                 cornerPanelClass(
                                     'yellow',
                                     activeRoundRecap?.total_poin_yellow,
                                 ),
                             ]"
                         >
-                            <h2
-                                :class="[
-                                    'max-w-full text-5xl font-black tracking-wider uppercase drop-shadow-sm',
-                                    cornerTextClass(
-                                        'yellow',
-                                        activeRoundRecap?.total_poin_yellow,
-                                    ),
-                                ]"
-                            >
-                                {{
-                                    currentMatch?.atlete_yellow ||
-                                    currentMatch?.athlete_yellow ||
-                                    '-'
-                                }}
-                            </h2>
-                            <p
-                                :class="[
-                                    'max-w-full text-3xl font-bold uppercase',
-                                    cornerSecondaryTextClass(
-                                        'yellow',
-                                        activeRoundRecap?.total_poin_yellow,
-                                    ),
-                                ]"
-                            >
-                                {{ currentMatch?.contingent_yellow || '-' }}
-                            </p>
                             <div
-                                class="mt-auto flex w-full flex-col items-center justify-center gap-3"
+                                class="absolute inset-x-9 top-9 flex max-h-36 flex-col items-center justify-start gap-3 overflow-hidden"
+                            >
+                                <h2
+                                    :class="[
+                                        'max-w-full truncate text-5xl font-black tracking-wider uppercase drop-shadow-sm',
+                                        cornerTextClass(
+                                            'yellow',
+                                            activeRoundRecap?.total_poin_yellow,
+                                        ),
+                                    ]"
+                                >
+                                    {{
+                                        currentMatch?.atlete_yellow ||
+                                        currentMatch?.athlete_yellow ||
+                                        '-'
+                                    }}
+                                </h2>
+                                <p
+                                    :class="[
+                                        'max-w-full truncate text-3xl font-bold uppercase',
+                                        cornerSecondaryTextClass(
+                                            'yellow',
+                                            activeRoundRecap?.total_poin_yellow,
+                                        ),
+                                    ]"
+                                >
+                                    {{ currentMatch?.contingent_yellow || '-' }}
+                                </p>
+                            </div>
+                            <div
+                                class="pointer-events-none absolute inset-x-9 top-1/2 flex -translate-y-1/2 items-center justify-center"
                             >
                                 <div
                                     :class="[
@@ -1048,19 +1052,18 @@ const partaiLabel = computed(() => currentMatch.value?.match_code ?? '-');
                                         activeRoundRecap?.total_poin_yellow || 0
                                     }}
                                 </div>
-                                <div
-                                    v-if="validYellowPunishments.length > 0"
-                                    class="flex min-h-12 max-w-full flex-wrap items-center justify-center gap-3 px-5 py-2 text-7xl font-black tracking-widest text-red-600"
+                            </div>
+                            <div
+                                class="absolute inset-x-9 bottom-8 flex h-24 max-w-full flex-wrap items-center justify-center gap-3 px-5 py-2 text-7xl font-black tracking-widest text-red-600"
+                            >
+                                <span
+                                    v-for="(
+                                        punishment, index
+                                    ) in validYellowPunishments"
+                                    :key="`yellow-punishment-${punishment}-${index}`"
+                                    class="font-mono tabular-nums"
+                                    >{{ punishment }}</span
                                 >
-                                    <span
-                                        v-for="(
-                                            punishment, index
-                                        ) in validYellowPunishments"
-                                        :key="`yellow-punishment-${punishment}-${index}`"
-                                        class="font-mono tabular-nums"
-                                        >{{ punishment }}</span
-                                    >
-                                </div>
                             </div>
                         </div>
 
@@ -1136,41 +1139,45 @@ const partaiLabel = computed(() => currentMatch.value?.match_code ?? '-');
 
                         <div
                             :class="[
-                                'relative flex min-w-0 flex-col items-center justify-center gap-3 p-9 text-center transition-colors duration-500',
+                                'relative flex min-w-0 flex-col items-center justify-center overflow-hidden p-9 text-center transition-colors duration-500',
                                 cornerPanelClass(
                                     'blue',
                                     activeRoundRecap?.total_poin_blue,
                                 ),
                             ]"
                         >
-                            <h2
-                                :class="[
-                                    'max-w-full text-5xl font-black tracking-wider uppercase drop-shadow-sm',
-                                    cornerTextClass(
-                                        'blue',
-                                        activeRoundRecap?.total_poin_blue,
-                                    ),
-                                ]"
-                            >
-                                {{
-                                    currentMatch?.atlete_blue ||
-                                    currentMatch?.athlete_blue ||
-                                    '-'
-                                }}
-                            </h2>
-                            <p
-                                :class="[
-                                    'max-w-full text-3xl font-bold uppercase',
-                                    cornerSecondaryTextClass(
-                                        'blue',
-                                        activeRoundRecap?.total_poin_blue,
-                                    ),
-                                ]"
-                            >
-                                {{ currentMatch?.contingent_blue || '-' }}
-                            </p>
                             <div
-                                class="mt-auto flex w-full flex-col items-center justify-center gap-3"
+                                class="absolute inset-x-9 top-9 flex max-h-36 flex-col items-center justify-start gap-3 overflow-hidden"
+                            >
+                                <h2
+                                    :class="[
+                                        'max-w-full truncate text-5xl font-black tracking-wider uppercase drop-shadow-sm',
+                                        cornerTextClass(
+                                            'blue',
+                                            activeRoundRecap?.total_poin_blue,
+                                        ),
+                                    ]"
+                                >
+                                    {{
+                                        currentMatch?.atlete_blue ||
+                                        currentMatch?.athlete_blue ||
+                                        '-'
+                                    }}
+                                </h2>
+                                <p
+                                    :class="[
+                                        'max-w-full truncate text-3xl font-bold uppercase',
+                                        cornerSecondaryTextClass(
+                                            'blue',
+                                            activeRoundRecap?.total_poin_blue,
+                                        ),
+                                    ]"
+                                >
+                                    {{ currentMatch?.contingent_blue || '-' }}
+                                </p>
+                            </div>
+                            <div
+                                class="pointer-events-none absolute inset-x-9 top-1/2 flex -translate-y-1/2 items-center justify-center"
                             >
                                 <div
                                     :class="[
@@ -1183,19 +1190,18 @@ const partaiLabel = computed(() => currentMatch.value?.match_code ?? '-');
                                 >
                                     {{ activeRoundRecap?.total_poin_blue || 0 }}
                                 </div>
-                                <div
-                                    v-if="validBluePunishments.length > 0"
-                                    class="flex min-h-12 max-w-full flex-wrap items-center justify-center gap-3 px-5 py-2 text-7xl font-black tracking-widest text-red-600"
+                            </div>
+                            <div
+                                class="absolute inset-x-9 bottom-8 flex h-24 max-w-full flex-wrap items-center justify-center gap-3 px-5 py-2 text-7xl font-black tracking-widest text-red-600"
+                            >
+                                <span
+                                    v-for="(
+                                        punishment, index
+                                    ) in validBluePunishments"
+                                    :key="`blue-punishment-${punishment}-${index}`"
+                                    class="font-mono tabular-nums"
+                                    >{{ punishment }}</span
                                 >
-                                    <span
-                                        v-for="(
-                                            punishment, index
-                                        ) in validBluePunishments"
-                                        :key="`blue-punishment-${punishment}-${index}`"
-                                        class="font-mono tabular-nums"
-                                        >{{ punishment }}</span
-                                    >
-                                </div>
                             </div>
                         </div>
                     </div>

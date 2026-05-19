@@ -133,7 +133,9 @@ const saveSetup = async () => {
             arena_name: g ? g.nama_gelanggang : null,
         });
         isSetupDialogOpen.value = false;
-        router.reload({ only: ['schedules', 'arena'] });
+        router.reload({
+            only: ['schedules', 'arena', 'activeMatch', 'recapJuryPoint'],
+        });
     } catch (e) {
         console.error('Failed to setup arena', e);
     } finally {
@@ -150,7 +152,9 @@ const refreshSchedule = async () => {
             sesi_tanding_id: props.arena.sesi_tanding_id,
             arena_name: props.arena.arena_name ?? null,
         });
-        router.reload({ only: ['schedules', 'arena'] });
+        router.reload({
+            only: ['schedules', 'arena', 'activeMatch', 'recapJuryPoint'],
+        });
     } catch (e) {
         console.error('Failed to refresh schedule', e);
     } finally {
@@ -735,6 +739,23 @@ const checkUnfinishedDecision = () => {
         isMatchWinnerDialogOpen.value = true;
     }
 };
+
+watch(
+    () => props.activeMatch,
+    (activeMatch) => {
+        currentMatchDetail.value = activeMatch ?? null;
+        setTimeout(checkUnfinishedDecision, 100);
+    },
+    { deep: true },
+);
+
+watch(
+    () => props.recapJuryPoint,
+    (recapJuryPoint) => {
+        currentRecapDetail.value = recapJuryPoint ?? [];
+    },
+    { deep: true },
+);
 
 const activeMainCorner = computed(() => {
     if (!activeRoundRecap.value) return 'draw';
