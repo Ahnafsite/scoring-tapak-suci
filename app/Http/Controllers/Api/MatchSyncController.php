@@ -76,13 +76,9 @@ class MatchSyncController extends Controller
 
         if ($shouldSyncStatusToServer) {
             try {
-                $apiUrl = rtrim(env('API_URL'), '/');
-                $apiKey = env('API_KEY');
+                $apiUrl = $this->scoringBaseUrl();
+                $apiKey = $this->scoringApiKey();
                 $serverStatus = $validated['status'] === 'not_started' ? 'not_started_yet' : $validated['status'];
-
-                if (! preg_match('~^(?:f|ht)tps?://~i', $apiUrl)) {
-                    $apiUrl = 'http://'.$apiUrl;
-                }
 
                 Http::withHeaders([
                     'X-API-KEY' => $apiKey,
@@ -153,14 +149,8 @@ class MatchSyncController extends Controller
 
     public function syncMatch(Request $request, $partai_id)
     {
-        $apiUrl = rtrim(env('API_URL'), '/');
-        $apiKey = env('API_KEY');
-
-        // Note: the external API is supposed to be $apiUrl/partai/detail-tanding-ts/{partai_id}
-        // Example: http://127.0.0.1:8000/api/partai/detail-tanding-ts/1
-        if (! preg_match('~^(?:f|ht)tps?://~i', $apiUrl)) {
-            $apiUrl = 'http://'.$apiUrl;
-        }
+        $apiUrl = $this->scoringBaseUrl();
+        $apiKey = $this->scoringApiKey();
 
         $response = Http::withHeaders([
             'X-API-KEY' => $apiKey,
@@ -468,12 +458,8 @@ class MatchSyncController extends Controller
             }
         }
 
-        $apiUrl = rtrim(env('API_URL'), '/');
-        $apiKey = env('API_KEY');
-
-        if (! preg_match('~^(?:f|ht)tps?://~i', $apiUrl)) {
-            $apiUrl = 'http://'.$apiUrl;
-        }
+        $apiUrl = $this->scoringBaseUrl();
+        $apiKey = $this->scoringApiKey();
 
         try {
             $response = Http::withHeaders([
@@ -598,5 +584,21 @@ class MatchSyncController extends Controller
             'message' => 'Data pertandingan berhasil disimpan dan disinkronkan.',
             'data' => $match,
         ]);
+    }
+
+    private function scoringApiKey(): ?string
+    {
+        return config('services.scoring.key');
+    }
+
+    private function scoringBaseUrl(): string
+    {
+        $apiUrl = rtrim((string) config('services.scoring.url'), '/');
+
+        if (! preg_match('~^(?:f|ht)tps?://~i', $apiUrl)) {
+            $apiUrl = 'http://'.$apiUrl;
+        }
+
+        return $apiUrl;
     }
 }

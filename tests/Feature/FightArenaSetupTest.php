@@ -15,6 +15,34 @@ class FightArenaSetupTest extends TestCase
 {
     use RefreshDatabase;
 
+    public function test_gelanggang_source_uses_configured_scoring_server(): void
+    {
+        config([
+            'services.scoring.url' => 'http://configured-scoring.test/api',
+            'services.scoring.key' => 'configured-scoring-key',
+        ]);
+
+        Http::fake([
+            'http://configured-scoring.test/api/gelanggang' => Http::response([
+                'data' => [
+                    ['id' => 1, 'name' => 'Gelanggang A'],
+                ],
+            ]),
+            '*' => Http::response([], 404),
+        ]);
+
+        $user = User::factory()->create();
+
+        $this
+            ->actingAs($user)
+            ->getJson('/api/source/gelanggang')
+            ->assertOk()
+            ->assertJsonPath('data.0.id', 1);
+
+        Http::assertSent(fn ($request): bool => $request->url() === 'http://configured-scoring.test/api/gelanggang'
+            && $request->hasHeader('X-API-KEY', 'configured-scoring-key'));
+    }
+
     public function test_arena_setup_refreshes_inserted_matches_without_replacing_existing_schedule_ids(): void
     {
         Http::fake([

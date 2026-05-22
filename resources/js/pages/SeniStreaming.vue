@@ -4,10 +4,8 @@ import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
 import FightFullscreenButton from '@/components/fight/FightFullscreenButton.vue';
 import FightWaitingState from '@/components/fight/FightWaitingState.vue';
 import { useFullscreenLock } from '@/composables/useFullscreenLock';
-import {
-    useSyncedTimer,
-    type SyncedTimerState,
-} from '@/composables/useSyncedTimer';
+import { useSyncedTimer } from '@/composables/useSyncedTimer';
+import type { SyncedTimerState } from '@/composables/useSyncedTimer';
 
 type ScoreKey =
     | 'wiraga'
@@ -104,6 +102,7 @@ const defaultTimer: TimerState = {
 const props = defineProps<{
     arena: any;
     activeMatch?: SeniMatch | null;
+    activeJuries?: number[];
     rankedMatches?: SeniMatch[];
     timer?: TimerState;
 }>();
@@ -126,7 +125,7 @@ const {
     triggerFullscreen,
 } = useFullscreenLock();
 
-const juries = [1, 2, 3, 4, 5];
+const defaultJuries = [1, 2, 3, 4, 5];
 
 const isOngoingMatch = (match: SeniMatch | null | undefined) => {
     return match?.status === 'ongoing';
@@ -304,6 +303,31 @@ const juryScores = computed(() => currentMatch.value?.jury_scores ?? []);
 const juryPunishments = computed(
     () => currentMatch.value?.jury_punishments ?? [],
 );
+const normalizeJuryNumbers = (juryNumbers: Array<number | string>) => {
+    return [...new Set(juryNumbers.map((juryNumber) => Number(juryNumber)))]
+        .filter((juryNumber) => Number.isInteger(juryNumber))
+        .filter((juryNumber) => juryNumber >= 1 && juryNumber <= 5)
+        .sort((first, second) => first - second);
+};
+const activeJuries = computed(() => {
+    return normalizeJuryNumbers(props.activeJuries ?? []);
+});
+const scoredJuries = computed(() => {
+    return normalizeJuryNumbers(
+        juryScores.value.map((score) => score.jury_number),
+    );
+});
+const juries = computed(() => {
+    if (activeJuries.value.length === 3) {
+        return activeJuries.value;
+    }
+
+    if (activeJuries.value.length > 0) {
+        return defaultJuries;
+    }
+
+    return scoredJuries.value.length === 3 ? scoredJuries.value : defaultJuries;
+});
 
 const findScore = (juryNumber: number) => {
     return (
@@ -361,7 +385,7 @@ const punishmentValue = (
 };
 
 const acceptedScoreTotal = (criterion: ScoreCriterion) => {
-    return juries.reduce((total, juryNumber) => {
+    return juries.value.reduce((total, juryNumber) => {
         if (!isAccepted(juryNumber)) {
             return total;
         }
@@ -371,7 +395,7 @@ const acceptedScoreTotal = (criterion: ScoreCriterion) => {
 };
 
 const acceptedPunishmentTotal = (criterion: PunishmentCriterion) => {
-    return juries.reduce((total, juryNumber) => {
+    return juries.value.reduce((total, juryNumber) => {
         if (!isAccepted(juryNumber)) {
             return total;
         }

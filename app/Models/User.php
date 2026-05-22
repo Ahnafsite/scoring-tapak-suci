@@ -36,4 +36,37 @@ class User extends Authenticatable
     {
         return $this->belongsTo(Role::class);
     }
+
+    /**
+     * @return list<int>
+     */
+    public static function activeSeniJuryNumbers(): array
+    {
+        $activeSince = now()
+            ->subMinutes((int) config('session.lifetime', 120))
+            ->getTimestamp();
+
+        return static::query()
+            ->select('users.name')
+            ->distinct()
+            ->join('roles', 'roles.id', '=', 'users.role_id')
+            ->join(config('session.table', 'sessions'), 'sessions.user_id', '=', 'users.id')
+            ->where('roles.name', 'Juri')
+            ->where('sessions.last_activity', '>=', $activeSince)
+            ->pluck('users.name')
+            ->map(static function (string $name): ?int {
+                preg_match('/\d+/', $name, $matches);
+
+                $juryNumber = isset($matches[0]) ? (int) $matches[0] : null;
+
+                return $juryNumber !== null && $juryNumber >= 1 && $juryNumber <= 5
+                    ? $juryNumber
+                    : null;
+            })
+            ->filter()
+            ->unique()
+            ->sort()
+            ->values()
+            ->all();
+    }
 }

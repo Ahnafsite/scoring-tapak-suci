@@ -13,18 +13,23 @@ use Illuminate\Support\Facades\Log;
 
 class ScoringSourceController extends Controller
 {
-    private function getHeaders()
+    /**
+     * @return array<string, string|null>
+     */
+    private function getHeaders(): array
     {
+        $apiKey = config('services.scoring.key');
+
         return [
-            'X-API-KEY' => env('API_KEY'),
-            'Authorization' => 'Bearer '.env('API_KEY'),
+            'X-API-KEY' => $apiKey,
+            'Authorization' => 'Bearer '.$apiKey,
             'Accept' => 'application/json',
         ];
     }
 
-    private function getBaseUrl()
+    private function getBaseUrl(): string
     {
-        $apiUrl = rtrim(env('API_URL', 'http://127.0.0.1:8000/api'), '/');
+        $apiUrl = rtrim((string) config('services.scoring.url'), '/');
 
         if (! preg_match('~^(?:f|ht)tps?://~i', $apiUrl)) {
             return 'http://'.$apiUrl;

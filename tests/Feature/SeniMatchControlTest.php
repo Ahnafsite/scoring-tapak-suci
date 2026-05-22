@@ -12,6 +12,7 @@ use App\Models\SeniPool;
 use App\Models\SeniSingleMatch;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Http;
 use Inertia\Testing\AssertableInertia as Assert;
@@ -119,6 +120,34 @@ class SeniMatchControlTest extends TestCase
         ]);
 
         Http::assertSent(fn ($request) => str_contains($request->url(), '/partai-seni/pools/7'));
+    }
+
+    public function test_seni_sesi_source_uses_configured_scoring_server(): void
+    {
+        config([
+            'services.scoring.url' => 'http://configured-scoring.test/api',
+            'services.scoring.key' => 'configured-scoring-key',
+        ]);
+
+        Http::fake([
+            'http://configured-scoring.test/api/sesi/seni/3' => Http::response([
+                'data' => [
+                    ['id' => 7, 'name' => 'Sesi Seni'],
+                ],
+            ]),
+            '*' => Http::response([], 404),
+        ]);
+
+        $user = User::factory()->create();
+
+        $this
+            ->actingAs($user)
+            ->getJson('/api/seni/source/sesi/3')
+            ->assertOk()
+            ->assertJsonPath('data.0.id', 7);
+
+        Http::assertSent(fn ($request): bool => $request->url() === 'http://configured-scoring.test/api/sesi/seni/3'
+            && $request->hasHeader('X-API-KEY', 'configured-scoring-key'));
     }
 
     public function test_sync_pool_matches_replaces_local_matches_as_inactive_rows(): void
@@ -1722,6 +1751,71 @@ class SeniMatchControlTest extends TestCase
                 && $event->type === 'score'
                 && $event->score['total_score'] === '58.000',
         );
+    }
+
+    public function test_three_active_seni_jury_scores_are_all_accepted(): void
+    {
+        $jury = Role::create(['name' => 'Juri']);
+        $user = User::factory()->create([
+            'name' => 'Juri 3',
+            'role_id' => $jury->id,
+        ]);
+        $activeJuries = User::factory()
+            ->count(2)
+            ->sequence(
+                ['name' => 'Juri 1'],
+                ['name' => 'Juri 2'],
+            )
+            ->create(['role_id' => $jury->id])
+            ->push($user);
+        $match = SeniSingleMatch::create([
+            'no_pool_babak_id' => 55,
+            'bkp_id' => 3416,
+            'matches_code' => '141',
+            'atletes' => 'Atlet Tiga',
+            'contingent' => 'Kontingen Tiga',
+            'type' => 'tunggal',
+            'category' => 'Tunggal',
+            'group' => 'Putri',
+            'status' => 'ongoing',
+            'is_active' => true,
+            'round_match' => 'Final',
+            'no_order' => 6,
+        ]);
+
+        foreach ([
+            ['jury_number' => 1, 'wiraga' => 40, 'wirasa' => 20, 'wirama' => 10, 'total_score' => 70],
+            ['jury_number' => 2, 'wiraga' => 50, 'wirasa' => 30, 'wirama' => 20, 'total_score' => 100],
+            ['jury_number' => 4, 'wiraga' => 80, 'wirasa' => 70, 'wirama' => 50, 'total_score' => 200, 'is_accepted' => true],
+            ['jury_number' => 5, 'wiraga' => 90, 'wirasa' => 70, 'wirama' => 50, 'total_score' => 210, 'is_accepted' => true],
+        ] as $score) {
+            $match->juryScores()->create($score);
+        }
+
+        DB::table('sessions')->insert($activeJuries->map(fn (User $activeJury): array => [
+            'id' => 'active-jury-'.$activeJury->id,
+            'user_id' => $activeJury->id,
+            'ip_address' => null,
+            'user_agent' => null,
+            'payload' => '',
+            'last_activity' => now()->getTimestamp(),
+        ])->all());
+
+        $this
+            ->actingAs($user)
+            ->postJson("/api/seni/matches/{$match->id}/jury-score", [
+                'jury_number' => 3,
+                'type' => 'score',
+                'field' => 'wiraga',
+                'value' => 60,
+            ])
+            ->assertOk()
+            ->assertJsonPath('data.total_score', '230.000')
+            ->assertJsonPath('data.jury_scores.0.is_accepted', true)
+            ->assertJsonPath('data.jury_scores.1.is_accepted', true)
+            ->assertJsonPath('data.jury_scores.2.is_accepted', true)
+            ->assertJsonPath('data.jury_scores.3.is_accepted', false)
+            ->assertJsonPath('data.jury_scores.4.is_accepted', false);
     }
 
     public function test_jury_update_accepts_three_median_scores_and_updates_tunggal_match_totals(): void

@@ -7,6 +7,7 @@ use App\Models\Role;
 use App\Models\SeniSingleMatch;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
 use Inertia\Testing\AssertableInertia as Assert;
 use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
@@ -91,6 +92,38 @@ class SeniSecretaryAccessTest extends TestCase
         $this->actingAs($user)
             ->get(route('seni-secretary'))
             ->assertForbidden();
+    }
+
+    #[Test]
+    public function secretary_receives_three_active_seni_juries(): void
+    {
+        $secretary = Role::create(['name' => 'Sekretaris']);
+        $jury = Role::create(['name' => 'Juri']);
+        $user = User::factory()->create(['role_id' => $secretary->id]);
+        $juries = User::factory()
+            ->count(3)
+            ->sequence(
+                ['name' => 'Juri 5'],
+                ['name' => 'Juri 1'],
+                ['name' => 'Juri 3'],
+            )
+            ->create(['role_id' => $jury->id]);
+
+        DB::table('sessions')->insert($juries->map(fn (User $activeJury): array => [
+            'id' => 'active-jury-'.$activeJury->id,
+            'user_id' => $activeJury->id,
+            'ip_address' => null,
+            'user_agent' => null,
+            'payload' => '',
+            'last_activity' => now()->getTimestamp(),
+        ])->all());
+
+        $this->actingAs($user)
+            ->get(route('seni-secretary'))
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->where('activeJuries', [1, 3, 5])
+            );
     }
 
     #[Test]

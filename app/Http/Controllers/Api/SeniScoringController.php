@@ -10,6 +10,7 @@ use App\Models\SeniJuryPunishment;
 use App\Models\SeniJuryScore;
 use App\Models\SeniPool;
 use App\Models\SeniSingleMatch;
+use App\Models\User;
 use Illuminate\Http\Client\Response;
 use Illuminate\Http\Request;
 use Illuminate\Support\Arr;
@@ -26,16 +27,18 @@ class SeniScoringController extends Controller
      */
     private function headers(): array
     {
+        $apiKey = config('services.scoring.key');
+
         return [
-            'X-API-KEY' => env('API_KEY'),
-            'Authorization' => 'Bearer '.env('API_KEY'),
+            'X-API-KEY' => $apiKey,
+            'Authorization' => 'Bearer '.$apiKey,
             'Accept' => 'application/json',
         ];
     }
 
     private function baseUrl(): string
     {
-        $apiUrl = rtrim((string) env('API_URL', 'http://127.0.0.1:8000/api'), '/');
+        $apiUrl = rtrim((string) config('services.scoring.url'), '/');
 
         if (! preg_match('~^(?:f|ht)tps?://~i', $apiUrl)) {
             $apiUrl = 'http://'.$apiUrl;
@@ -1242,7 +1245,12 @@ class SeniScoringController extends Controller
             return;
         }
 
-        $orderedScores = $scores
+        $activeJuryNumbers = User::activeSeniJuryNumbers();
+        $scoreCandidates = count($activeJuryNumbers) === 3
+            ? $scores->whereIn('jury_number', $activeJuryNumbers)->values()
+            : $scores;
+
+        $orderedScores = $scoreCandidates
             ->sortBy([
                 ['total_score', 'asc'],
                 ['jury_number', 'asc'],

@@ -8,6 +8,7 @@ use App\Models\SeniSingleMatch;
 use App\Models\Timer;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
 use Inertia\Testing\AssertableInertia as Assert;
 use Tests\TestCase;
 
@@ -91,6 +92,37 @@ class SeniStreamingAccessTest extends TestCase
                 ->where('activeMatch.jury_scores.0.is_accepted', true)
                 ->has('activeMatch.jury_punishments', 1)
                 ->where('activeMatch.jury_punishments.0.keluar_garis', '2.000')
+            );
+    }
+
+    public function test_streamer_receives_three_active_seni_juries(): void
+    {
+        $streamer = Role::create(['name' => 'Streamer']);
+        $jury = Role::create(['name' => 'Juri']);
+        $user = User::factory()->create(['role_id' => $streamer->id]);
+        $juries = User::factory()
+            ->count(3)
+            ->sequence(
+                ['name' => 'Juri 2'],
+                ['name' => 'Juri 4'],
+                ['name' => 'Juri 1'],
+            )
+            ->create(['role_id' => $jury->id]);
+
+        DB::table('sessions')->insert($juries->map(fn (User $activeJury): array => [
+            'id' => 'active-jury-'.$activeJury->id,
+            'user_id' => $activeJury->id,
+            'ip_address' => null,
+            'user_agent' => null,
+            'payload' => '',
+            'last_activity' => now()->getTimestamp(),
+        ])->all());
+
+        $this->actingAs($user)
+            ->get(route('seni-streaming'))
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->where('activeJuries', [1, 2, 4])
             );
     }
 

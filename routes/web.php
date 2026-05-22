@@ -14,6 +14,7 @@ use App\Models\FightSchedule;
 use App\Models\SeniPool;
 use App\Models\SeniSingleMatch;
 use App\Models\Timer;
+use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 
@@ -100,6 +101,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
         return inertia('SeniSecretary', [
             'arena' => Arena::first(),
             'activeMatch' => $activeMatch,
+            'activeJuries' => User::activeSeniJuryNumbers(),
             'rankedMatches' => $rankedMatches,
         ]);
     })->name('seni-secretary');
@@ -125,6 +127,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
         return inertia('SeniStreaming', [
             'arena' => Arena::first(),
             'activeMatch' => $activeMatch,
+            'activeJuries' => User::activeSeniJuryNumbers(),
             'rankedMatches' => $rankedMatches,
             'timer' => Timer::current()->toBroadcastPayload(),
         ]);
