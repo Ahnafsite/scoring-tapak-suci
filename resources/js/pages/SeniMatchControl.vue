@@ -210,15 +210,17 @@ const sortedByNoOrder = (matches: SeniMatch[]) => {
 };
 
 const normalizeActiveMatch = (matches: SeniMatch[]) => {
-    const ongoingMatch = matches.find((match) => match.status === 'ongoing');
+    const lockedMatch =
+        matches.find((match) => match.status === 'ongoing') ??
+        matches.find((match) => match.status === 'paused');
 
-    if (!ongoingMatch) {
+    if (!lockedMatch) {
         return matches;
     }
 
     return matches.map((match) => ({
         ...match,
-        is_active: match.id === ongoingMatch.id,
+        is_active: match.id === lockedMatch.id,
     }));
 };
 

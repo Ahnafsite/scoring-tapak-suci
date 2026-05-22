@@ -18,6 +18,10 @@ class User extends Authenticatable
     /** @use HasFactory<UserFactory> */
     use HasFactory, Notifiable, TwoFactorAuthenticatable;
 
+    private const SENI_THREE_JURY_NUMBERS = [1, 2, 3];
+
+    private const SENI_FIVE_JURY_NUMBERS = [1, 2, 3, 4, 5];
+
     /**
      * Get the attributes that should be cast.
      *
@@ -68,5 +72,17 @@ class User extends Authenticatable
             ->sort()
             ->values()
             ->all();
+    }
+
+    /**
+     * @return list<int>
+     */
+    public static function seniScoringJuryNumbers(): array
+    {
+        $activeJuryNumbers = static::activeSeniJuryNumbers();
+
+        return count($activeJuryNumbers) === count(self::SENI_FIVE_JURY_NUMBERS)
+            ? self::SENI_FIVE_JURY_NUMBERS
+            : self::SENI_THREE_JURY_NUMBERS;
     }
 }

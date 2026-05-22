@@ -133,14 +133,18 @@ class SeniScoringController extends Controller
                 SeniSingleMatch::create($this->mapSingleMatch($match, $pool, []));
             }
 
-            $ongoingMatch = $pool->matches()
+            $lockedMatch = $pool->matches()
                 ->where('status', 'ongoing')
                 ->orderBy('no_order')
-                ->first();
+                ->first()
+                ?? $pool->matches()
+                    ->where('status', 'paused')
+                    ->orderBy('no_order')
+                    ->first();
 
-            if ($ongoingMatch instanceof SeniSingleMatch) {
+            if ($lockedMatch instanceof SeniSingleMatch) {
                 SeniSingleMatch::query()->update(['is_active' => false]);
-                $ongoingMatch->forceFill(['is_active' => true])->save();
+                $lockedMatch->forceFill(['is_active' => true])->save();
             }
         });
 
@@ -1245,10 +1249,10 @@ class SeniScoringController extends Controller
             return;
         }
 
-        $activeJuryNumbers = User::activeSeniJuryNumbers();
-        $scoreCandidates = count($activeJuryNumbers) === 3
-            ? $scores->whereIn('jury_number', $activeJuryNumbers)->values()
-            : $scores;
+        $scoringJuryNumbers = User::seniScoringJuryNumbers();
+        $scoreCandidates = $scores
+            ->whereIn('jury_number', $scoringJuryNumbers)
+            ->values();
 
         $orderedScores = $scoreCandidates
             ->sortBy([
@@ -1258,7 +1262,7 @@ class SeniScoringController extends Controller
             ->values();
         $acceptedScores = $orderedScores;
 
-        if ($orderedScores->count() > 3) {
+        if (count($scoringJuryNumbers) === 5 && $orderedScores->count() > 3) {
             $acceptedScores = $orderedScores
                 ->slice(1, $orderedScores->count() - 2)
                 ->values();

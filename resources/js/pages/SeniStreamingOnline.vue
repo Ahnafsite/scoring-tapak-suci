@@ -104,6 +104,7 @@ const defaultTimer: TimerState = {
 const props = defineProps<{
     arena: any;
     activeMatch?: SeniMatch | null;
+    scoringJuries?: number[];
     rankedMatches?: SeniMatch[];
     timer?: TimerState;
 }>();
@@ -116,7 +117,8 @@ const { formattedTimer, localTimer, syncTimer } = useSyncedTimer(
 );
 const { buttonTitle, triggerFullscreen } = useFullscreenLock();
 
-const juries = [1, 2, 3, 4, 5];
+const threeJuries = [1, 2, 3];
+const defaultJuries = [1, 2, 3, 4, 5];
 
 const isOngoingMatch = (match: SeniMatch | null | undefined) => {
     return match?.status === 'ongoing';
@@ -332,6 +334,17 @@ const juryScores = computed(() => currentMatch.value?.jury_scores ?? []);
 const juryPunishments = computed(
     () => currentMatch.value?.jury_punishments ?? [],
 );
+const normalizeJuryNumbers = (juryNumbers: Array<number | string>) => {
+    return [...new Set(juryNumbers.map((juryNumber) => Number(juryNumber)))]
+        .filter((juryNumber) => Number.isInteger(juryNumber))
+        .filter((juryNumber) => juryNumber >= 1 && juryNumber <= 5)
+        .sort((first, second) => first - second);
+};
+const juries = computed(() => {
+    return normalizeJuryNumbers(props.scoringJuries ?? []).length === 3
+        ? threeJuries
+        : defaultJuries;
+});
 
 const findScore = (juryNumber: number) => {
     return (
@@ -389,7 +402,7 @@ const punishmentValue = (
 };
 
 const acceptedScoreTotal = (criterion: ScoreCriterion) => {
-    return juries.reduce((total, juryNumber) => {
+    return juries.value.reduce((total, juryNumber) => {
         if (!isAccepted(juryNumber)) {
             return total;
         }
@@ -399,7 +412,7 @@ const acceptedScoreTotal = (criterion: ScoreCriterion) => {
 };
 
 const acceptedPunishmentTotal = (criterion: PunishmentCriterion) => {
-    return juries.reduce((total, juryNumber) => {
+    return juries.value.reduce((total, juryNumber) => {
         if (!isAccepted(juryNumber)) {
             return total;
         }
@@ -451,7 +464,7 @@ const shouldShowActiveTimer = computed(() => {
 });
 
 const juryTotalRows = computed(() => {
-    return juries.map((juryNumber) => ({
+    return juries.value.map((juryNumber) => ({
         juryNumber,
         totalScore: finalScoreForJury(juryNumber),
     }));

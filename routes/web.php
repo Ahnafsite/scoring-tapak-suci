@@ -101,7 +101,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
         return inertia('SeniSecretary', [
             'arena' => Arena::first(),
             'activeMatch' => $activeMatch,
-            'activeJuries' => User::activeSeniJuryNumbers(),
+            'scoringJuries' => User::seniScoringJuryNumbers(),
             'rankedMatches' => $rankedMatches,
         ]);
     })->name('seni-secretary');
@@ -127,7 +127,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
         return inertia('SeniStreaming', [
             'arena' => Arena::first(),
             'activeMatch' => $activeMatch,
-            'activeJuries' => User::activeSeniJuryNumbers(),
+            'scoringJuries' => User::seniScoringJuryNumbers(),
             'rankedMatches' => $rankedMatches,
             'timer' => Timer::current()->toBroadcastPayload(),
         ]);
@@ -154,6 +154,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
         return inertia('SeniStreamingOnline', [
             'arena' => Arena::first(),
             'activeMatch' => $activeMatch,
+            'scoringJuries' => User::seniScoringJuryNumbers(),
             'rankedMatches' => $rankedMatches,
             'timer' => Timer::current()->toBroadcastPayload(),
         ]);

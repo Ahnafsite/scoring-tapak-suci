@@ -12,6 +12,7 @@ use App\Models\SeniPool;
 use App\Models\SeniSingleMatch;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Http;
@@ -281,6 +282,63 @@ class SeniMatchControlTest extends TestCase
         $this->assertDatabaseHas('seni_single_matches', [
             'bkp_id' => 3411,
             'status' => 'ongoing',
+            'is_active' => false,
+        ]);
+    }
+
+    public function test_sync_pool_matches_sets_first_paused_match_active(): void
+    {
+        Http::fake([
+            '*/partai-seni/55' => Http::response([
+                'status' => 'success',
+                'data' => [
+                    [
+                        'bkp_id' => 3411,
+                        'match_code' => '136',
+                        'atlets' => ['Atlet B'],
+                        'contingent' => 'Kontingen B',
+                        'match_number' => 2,
+                        'status' => 'paused',
+                    ],
+                    [
+                        'bkp_id' => 3410,
+                        'match_code' => '135',
+                        'atlets' => ['Atlet A'],
+                        'contingent' => 'Kontingen A',
+                        'match_number' => 1,
+                        'status' => 'paused',
+                    ],
+                ],
+            ], 200),
+        ]);
+
+        $operator = Role::create(['name' => 'Operator']);
+        $user = User::factory()->create(['role_id' => $operator->id]);
+        $pool = SeniPool::create([
+            'no_pool_babak_id' => 55,
+            'round_match' => 'Final',
+            'group' => 'Putra',
+            'category' => 'Tunggal',
+            'no_pool' => 'A',
+        ]);
+
+        $this
+            ->actingAs($user)
+            ->postJson("/api/seni/pools/{$pool->id}/sync-matches")
+            ->assertOk()
+            ->assertJsonPath('data.0.bkp_id', 3410)
+            ->assertJsonPath('data.0.is_active', true)
+            ->assertJsonPath('data.1.bkp_id', 3411)
+            ->assertJsonPath('data.1.is_active', false);
+
+        $this->assertDatabaseHas('seni_single_matches', [
+            'bkp_id' => 3410,
+            'status' => 'paused',
+            'is_active' => true,
+        ]);
+        $this->assertDatabaseHas('seni_single_matches', [
+            'bkp_id' => 3411,
+            'status' => 'paused',
             'is_active' => false,
         ]);
     }
@@ -843,6 +901,20 @@ class SeniMatchControlTest extends TestCase
 
         $operator = Role::create(['name' => 'Operator']);
         $user = User::factory()->create(['role_id' => $operator->id]);
+        $jury = Role::create(['name' => 'Juri']);
+        $activeJuries = User::factory()
+            ->count(5)
+            ->sequence(
+                ['name' => 'Juri 1'],
+                ['name' => 'Juri 2'],
+                ['name' => 'Juri 3'],
+                ['name' => 'Juri 4'],
+                ['name' => 'Juri 5'],
+            )
+            ->create(['role_id' => $jury->id]);
+
+        $this->createActiveSeniJurySessions($activeJuries);
+
         $match = SeniSingleMatch::create([
             'no_pool_babak_id' => 55,
             'bkp_id' => 3410,
@@ -1753,7 +1825,7 @@ class SeniMatchControlTest extends TestCase
         );
     }
 
-    public function test_three_active_seni_jury_scores_are_all_accepted(): void
+    public function test_three_seni_scoring_jury_scores_are_all_accepted_when_fewer_than_five_juries_are_active(): void
     {
         $jury = Role::create(['name' => 'Juri']);
         $user = User::factory()->create([
@@ -1761,10 +1833,11 @@ class SeniMatchControlTest extends TestCase
             'role_id' => $jury->id,
         ]);
         $activeJuries = User::factory()
-            ->count(2)
+            ->count(3)
             ->sequence(
                 ['name' => 'Juri 1'],
                 ['name' => 'Juri 2'],
+                ['name' => 'Juri 4'],
             )
             ->create(['role_id' => $jury->id])
             ->push($user);
@@ -1792,14 +1865,7 @@ class SeniMatchControlTest extends TestCase
             $match->juryScores()->create($score);
         }
 
-        DB::table('sessions')->insert($activeJuries->map(fn (User $activeJury): array => [
-            'id' => 'active-jury-'.$activeJury->id,
-            'user_id' => $activeJury->id,
-            'ip_address' => null,
-            'user_agent' => null,
-            'payload' => '',
-            'last_activity' => now()->getTimestamp(),
-        ])->all());
+        $this->createActiveSeniJurySessions($activeJuries);
 
         $this
             ->actingAs($user)
@@ -1827,6 +1893,19 @@ class SeniMatchControlTest extends TestCase
             'name' => 'Juri 5',
             'role_id' => $jury->id,
         ]);
+        $activeJuries = User::factory()
+            ->count(4)
+            ->sequence(
+                ['name' => 'Juri 1'],
+                ['name' => 'Juri 2'],
+                ['name' => 'Juri 3'],
+                ['name' => 'Juri 4'],
+            )
+            ->create(['role_id' => $jury->id])
+            ->push($user);
+
+        $this->createActiveSeniJurySessions($activeJuries);
+
         $match = SeniSingleMatch::create([
             'no_pool_babak_id' => 55,
             'bkp_id' => 3410,
@@ -1922,6 +2001,19 @@ class SeniMatchControlTest extends TestCase
             'name' => 'Juri 5',
             'role_id' => $jury->id,
         ]);
+        $activeJuries = User::factory()
+            ->count(4)
+            ->sequence(
+                ['name' => 'Juri 1'],
+                ['name' => 'Juri 2'],
+                ['name' => 'Juri 3'],
+                ['name' => 'Juri 4'],
+            )
+            ->create(['role_id' => $jury->id])
+            ->push($user);
+
+        $this->createActiveSeniJurySessions($activeJuries);
+
         $match = SeniSingleMatch::create([
             'no_pool_babak_id' => 56,
             'bkp_id' => 3412,
@@ -1989,6 +2081,21 @@ class SeniMatchControlTest extends TestCase
             'total_musik' => '30.000',
             'total_punishment' => '8.000',
         ]);
+    }
+
+    /**
+     * @param  Collection<int, User>  $activeJuries
+     */
+    private function createActiveSeniJurySessions(Collection $activeJuries): void
+    {
+        DB::table('sessions')->insert($activeJuries->map(fn (User $activeJury): array => [
+            'id' => 'active-jury-'.$activeJury->id,
+            'user_id' => $activeJury->id,
+            'ip_address' => null,
+            'user_agent' => null,
+            'payload' => '',
+            'last_activity' => now()->getTimestamp(),
+        ])->all());
     }
 
     /**

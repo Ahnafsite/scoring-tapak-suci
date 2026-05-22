@@ -102,7 +102,7 @@ const defaultTimer: TimerState = {
 const props = defineProps<{
     arena: any;
     activeMatch?: SeniMatch | null;
-    activeJuries?: number[];
+    scoringJuries?: number[];
     rankedMatches?: SeniMatch[];
     timer?: TimerState;
 }>();
@@ -125,6 +125,7 @@ const {
     triggerFullscreen,
 } = useFullscreenLock();
 
+const threeJuries = [1, 2, 3];
 const defaultJuries = [1, 2, 3, 4, 5];
 
 const isOngoingMatch = (match: SeniMatch | null | undefined) => {
@@ -309,24 +310,10 @@ const normalizeJuryNumbers = (juryNumbers: Array<number | string>) => {
         .filter((juryNumber) => juryNumber >= 1 && juryNumber <= 5)
         .sort((first, second) => first - second);
 };
-const activeJuries = computed(() => {
-    return normalizeJuryNumbers(props.activeJuries ?? []);
-});
-const scoredJuries = computed(() => {
-    return normalizeJuryNumbers(
-        juryScores.value.map((score) => score.jury_number),
-    );
-});
 const juries = computed(() => {
-    if (activeJuries.value.length === 3) {
-        return activeJuries.value;
-    }
-
-    if (activeJuries.value.length > 0) {
-        return defaultJuries;
-    }
-
-    return scoredJuries.value.length === 3 ? scoredJuries.value : defaultJuries;
+    return normalizeJuryNumbers(props.scoringJuries ?? []).length === 3
+        ? threeJuries
+        : defaultJuries;
 });
 
 const findScore = (juryNumber: number) => {

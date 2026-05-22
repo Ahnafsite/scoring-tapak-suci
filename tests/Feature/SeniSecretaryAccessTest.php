@@ -95,7 +95,7 @@ class SeniSecretaryAccessTest extends TestCase
     }
 
     #[Test]
-    public function secretary_receives_three_active_seni_juries(): void
+    public function secretary_receives_three_seni_scoring_juries_when_fewer_than_five_juries_are_active(): void
     {
         $secretary = Role::create(['name' => 'Sekretaris']);
         $jury = Role::create(['name' => 'Juri']);
@@ -122,7 +122,7 @@ class SeniSecretaryAccessTest extends TestCase
             ->get(route('seni-secretary'))
             ->assertOk()
             ->assertInertia(fn (Assert $page) => $page
-                ->where('activeJuries', [1, 3, 5])
+                ->where('scoringJuries', [1, 2, 3])
             );
     }
 

@@ -95,7 +95,7 @@ class SeniStreamingAccessTest extends TestCase
             );
     }
 
-    public function test_streamer_receives_three_active_seni_juries(): void
+    public function test_streamer_receives_three_seni_scoring_juries_when_fewer_than_five_juries_are_active(): void
     {
         $streamer = Role::create(['name' => 'Streamer']);
         $jury = Role::create(['name' => 'Juri']);
@@ -122,7 +122,14 @@ class SeniStreamingAccessTest extends TestCase
             ->get(route('seni-streaming'))
             ->assertOk()
             ->assertInertia(fn (Assert $page) => $page
-                ->where('activeJuries', [1, 2, 4])
+                ->where('scoringJuries', [1, 2, 3])
+            );
+
+        $this->actingAs($user)
+            ->get(route('seni-streaming-online'))
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->where('scoringJuries', [1, 2, 3])
             );
     }
 
