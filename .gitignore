@@ -26,3 +26,8 @@ yarn-error.log
 /.nova
 /.vscode
 /.zed
+
+# Backups taken before a tournament; these hold APP_KEY and DB credentials.
+.env.bak-*
+.env.event-backup
+*.swp
