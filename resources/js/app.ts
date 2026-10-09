@@ -5,8 +5,11 @@ import { initializeTheme } from '@/composables/useAppearance';
 import AppLayout from '@/layouts/AppLayout.vue';
 import AuthLayout from '@/layouts/AuthLayout.vue';
 import SettingsLayout from '@/layouts/settings/Layout.vue';
+import { installSessionGuard } from '@/lib/session-guard';
 
 if (typeof window !== 'undefined') {
+    installSessionGuard();
+
     window.Pusher = Pusher;
 
     window.Echo = new Echo({
