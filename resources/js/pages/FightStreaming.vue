@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { Head, router } from '@inertiajs/vue3';
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
+import FightPunishmentRow from '@/components/fight/FightPunishmentRow.vue';
 import FightWaitingState from '@/components/fight/FightWaitingState.vue';
 import FitWords from '@/components/FitWords.vue';
 import TvStage from '@/components/TvStage.vue';
@@ -1059,18 +1060,10 @@ const partaiLabel = computed(() => currentMatch.value?.match_code ?? '-');
                                     }}
                                 </div>
                             </div>
-                            <div
-                                class="absolute inset-x-9 bottom-8 flex h-24 max-w-full flex-wrap items-center justify-center gap-3 px-5 py-2 text-7xl font-black tracking-widest text-red-600"
-                            >
-                                <span
-                                    v-for="(
-                                        punishment, index
-                                    ) in validYellowPunishments"
-                                    :key="`yellow-punishment-${punishment}-${index}`"
-                                    class="font-mono tabular-nums"
-                                    >{{ punishment }}</span
-                                >
-                            </div>
+                            <FightPunishmentRow
+                                class="absolute inset-x-9 bottom-8 h-24 px-5 text-red-600"
+                                :values="validYellowPunishments"
+                            />
                         </div>
 
                         <div
@@ -1198,18 +1191,10 @@ const partaiLabel = computed(() => currentMatch.value?.match_code ?? '-');
                                     {{ activeRoundRecap?.total_poin_blue || 0 }}
                                 </div>
                             </div>
-                            <div
-                                class="absolute inset-x-9 bottom-8 flex h-24 max-w-full flex-wrap items-center justify-center gap-3 px-5 py-2 text-7xl font-black tracking-widest text-red-600"
-                            >
-                                <span
-                                    v-for="(
-                                        punishment, index
-                                    ) in validBluePunishments"
-                                    :key="`blue-punishment-${punishment}-${index}`"
-                                    class="font-mono tabular-nums"
-                                    >{{ punishment }}</span
-                                >
-                            </div>
+                            <FightPunishmentRow
+                                class="absolute inset-x-9 bottom-8 h-24 px-5 text-red-600"
+                                :values="validBluePunishments"
+                            />
                         </div>
                     </div>
 
