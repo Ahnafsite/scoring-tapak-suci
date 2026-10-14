@@ -3,6 +3,7 @@ import { Head, router, usePage } from '@inertiajs/vue3';
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
 import FightFullscreenButton from '@/components/fight/FightFullscreenButton.vue';
 import FightWaitingState from '@/components/fight/FightWaitingState.vue';
+import TvStage from '@/components/TvStage.vue';
 import { useFullscreenLock } from '@/composables/useFullscreenLock';
 import { useSyncedTimer } from '@/composables/useSyncedTimer';
 import type { SyncedTimerState } from '@/composables/useSyncedTimer';
@@ -776,7 +777,10 @@ onUnmounted(() => {
 <template>
     <Head title="Sekretaris Seni - Tapak Suci" />
 
-    <div class="flex h-screen overflow-hidden bg-zinc-900 text-foreground">
+    <TvStage
+        :on-fullscreen="triggerFullscreen"
+        stage-class="flex h-full w-full overflow-hidden bg-zinc-900 text-foreground"
+    >
         <template v-if="isWaiting">
             <FightWaitingState clickable :on-logo-click="triggerFullscreen" />
         </template>
@@ -1356,5 +1360,5 @@ onUnmounted(() => {
                 </main>
             </div>
         </template>
-    </div>
+    </TvStage>
 </template>

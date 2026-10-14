@@ -2,6 +2,8 @@
 import { Head, router } from '@inertiajs/vue3';
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
 import FightWaitingState from '@/components/fight/FightWaitingState.vue';
+import FitWords from '@/components/FitWords.vue';
+import TvStage from '@/components/TvStage.vue';
 import { useFullscreenLock } from '@/composables/useFullscreenLock';
 import { useSyncedTimer } from '@/composables/useSyncedTimer';
 import type { SyncedTimerState } from '@/composables/useSyncedTimer';
@@ -692,8 +694,9 @@ const partaiLabel = computed(() => currentMatch.value?.match_code ?? '-');
 <template>
     <Head title="Fight Streaming - Tapak Suci" />
 
-    <div
-        class="flex h-dvh w-screen overflow-hidden bg-zinc-950 text-foreground"
+    <TvStage
+        :on-fullscreen="triggerFullscreen"
+        stage-class="flex h-full w-full overflow-hidden bg-zinc-950 text-foreground"
     >
         <template v-if="matchStatus === 'not_started'">
             <FightWaitingState clickable :on-logo-click="triggerFullscreen" />
@@ -713,13 +716,14 @@ const partaiLabel = computed(() => currentMatch.value?.match_code ?? '-');
                             class="flex max-w-[70%] flex-col items-start text-left"
                         >
                             <h2
-                                class="mb-2 w-full truncate text-3xl font-black tracking-wider text-white uppercase drop-shadow-sm"
+                                class="mb-2 w-full text-3xl font-black tracking-wider text-white uppercase drop-shadow-sm"
                             >
-                                {{
-                                    currentMatch?.atlete_blue ||
-                                    currentMatch?.athlete_blue ||
-                                    '-'
-                                }}
+                                <FitWords
+                                    :text="
+                                        currentMatch?.atlete_blue ||
+                                        currentMatch?.athlete_blue
+                                    "
+                                />
                             </h2>
                             <span
                                 class="bg-blue-950 px-3 py-1 text-[10px] font-bold tracking-widest text-blue-100 uppercase"
@@ -764,13 +768,14 @@ const partaiLabel = computed(() => currentMatch.value?.match_code ?? '-');
                             class="flex max-w-[70%] flex-col items-end text-right"
                         >
                             <h2
-                                class="mb-2 w-full truncate text-3xl font-black tracking-wider text-black uppercase drop-shadow-sm"
+                                class="mb-2 w-full text-3xl font-black tracking-wider text-black uppercase drop-shadow-sm"
                             >
-                                {{
-                                    currentMatch?.atlete_yellow ||
-                                    currentMatch?.athlete_yellow ||
-                                    '-'
-                                }}
+                                <FitWords
+                                    :text="
+                                        currentMatch?.atlete_yellow ||
+                                        currentMatch?.athlete_yellow
+                                    "
+                                />
                             </h2>
                             <span
                                 class="bg-black px-3 py-1 text-[10px] font-bold tracking-widest text-yellow-400 uppercase"
@@ -1011,18 +1016,19 @@ const partaiLabel = computed(() => currentMatch.value?.match_code ?? '-');
                             >
                                 <h2
                                     :class="[
-                                        'max-w-full truncate text-5xl font-black tracking-wider uppercase drop-shadow-sm',
+                                        'w-full text-5xl font-black tracking-wider uppercase drop-shadow-sm',
                                         cornerTextClass(
                                             'yellow',
                                             activeRoundRecap?.total_poin_yellow,
                                         ),
                                     ]"
                                 >
-                                    {{
-                                        currentMatch?.atlete_yellow ||
-                                        currentMatch?.athlete_yellow ||
-                                        '-'
-                                    }}
+                                    <FitWords
+                                        :text="
+                                            currentMatch?.atlete_yellow ||
+                                            currentMatch?.athlete_yellow
+                                        "
+                                    />
                                 </h2>
                                 <p
                                     :class="[
@@ -1041,7 +1047,7 @@ const partaiLabel = computed(() => currentMatch.value?.match_code ?? '-');
                             >
                                 <div
                                     :class="[
-                                        'w-full text-center text-[min(27vh,20rem)] leading-none font-black drop-shadow-sm',
+                                        'w-full text-center text-[22rem] leading-none font-black drop-shadow-sm',
                                         cornerTextClass(
                                             'yellow',
                                             activeRoundRecap?.total_poin_yellow,
@@ -1151,18 +1157,19 @@ const partaiLabel = computed(() => currentMatch.value?.match_code ?? '-');
                             >
                                 <h2
                                     :class="[
-                                        'max-w-full truncate text-5xl font-black tracking-wider uppercase drop-shadow-sm',
+                                        'w-full text-5xl font-black tracking-wider uppercase drop-shadow-sm',
                                         cornerTextClass(
                                             'blue',
                                             activeRoundRecap?.total_poin_blue,
                                         ),
                                     ]"
                                 >
-                                    {{
-                                        currentMatch?.atlete_blue ||
-                                        currentMatch?.athlete_blue ||
-                                        '-'
-                                    }}
+                                    <FitWords
+                                        :text="
+                                            currentMatch?.atlete_blue ||
+                                            currentMatch?.athlete_blue
+                                        "
+                                    />
                                 </h2>
                                 <p
                                     :class="[
@@ -1181,7 +1188,7 @@ const partaiLabel = computed(() => currentMatch.value?.match_code ?? '-');
                             >
                                 <div
                                     :class="[
-                                        'w-full text-center text-[min(27vh,20rem)] leading-none font-black drop-shadow-sm',
+                                        'w-full text-center text-[22rem] leading-none font-black drop-shadow-sm',
                                         cornerTextClass(
                                             'blue',
                                             activeRoundRecap?.total_poin_blue,
@@ -1383,5 +1390,5 @@ const partaiLabel = computed(() => currentMatch.value?.match_code ?? '-');
                 </div>
             </div>
         </template>
-    </div>
+    </TvStage>
 </template>
