@@ -339,15 +339,71 @@ const isAccepted = (juryNumber: number) => {
     return accepted === true || accepted === 1;
 };
 
-const juryStateClass = (juryNumber: number) => {
-    return isAccepted(juryNumber) ? 'bg-green-500/10' : '';
+/**
+ * Accepted / rejected, in the same language the tanding board uses for a
+ * winning corner: a solid fill with contrasting text on the state itself, and
+ * only a wash of that colour behind the numbers.
+ */
+const STAGE_WIDTH = 1920;
+const BOARD_PADDING = 28;
+const MAX_TOTAL_FONT_SIZE = 176;
+const MAX_BREAKDOWN_FONT_SIZE = 72;
+
+/**
+ * Accepted / rejected shows on the final score alone - the rows above it stay
+ * neutral, so the eye lands on the one cell carrying the verdict.
+ *
+ * The fill is `green-700`, not a brighter green: against this board's gold
+ * (`yellow-400`) and warm red, a light mint green reads cold and fights the
+ * header bar for attention, while a deep green sits under the gold and still
+ * says "valid". It also carries white text at 5.0:1, where `green-500` managed
+ * 2.3:1 and had to fall back to black. A rejected score stays legible at
+ * 7.0:1, just unhighlighted.
+ */
+const juryTotalClass = (juryNumber: number) => {
+    return isAccepted(juryNumber)
+        ? 'bg-green-700 text-white'
+        : 'bg-zinc-900 text-stone-400';
 };
 
-const juryHeaderClass = (juryNumber: number) => {
-    return isAccepted(juryNumber)
-        ? 'border-t-2 border-t-green-500 bg-zinc-900 text-green-500'
-        : 'border-t-2 border-t-red-500 bg-zinc-900 text-red-500';
-};
+/**
+ * The total is the one number read from the back of the hall, so it is sized
+ * to the cell rather than picked. The board is laid out on a fixed 1920px
+ * canvas, so the column width is known up front: no measuring, no reflow, and
+ * a five-jury column simply gets a smaller number than a three-jury one.
+ */
+const juryTotalFontSize = computed(() => {
+    const columnCount = juries.value.length || 1;
+    const cellWidth = (STAGE_WIDTH - BOARD_PADDING * 2) / columnCount - 48;
+    const longestTotal = juries.value.reduce((longest, juryNumber) => {
+        return Math.max(
+            longest,
+            formatScore(finalScoreForJury(juryNumber)).length,
+        );
+    }, 1);
+
+    // Black-weight tabular digits run about 0.58em wide.
+    return Math.round(
+        Math.min(MAX_TOTAL_FONT_SIZE, cellWidth / (longestTotal * 0.62)),
+    );
+});
+
+/** The same fit, for the two half-width cells above the total. */
+const juryBreakdownFontSize = computed(() => {
+    const columnCount = juries.value.length || 1;
+    const cellWidth = (STAGE_WIDTH - BOARD_PADDING * 2) / columnCount / 2 - 20;
+    const longestValue = juries.value.reduce((longest, juryNumber) => {
+        return Math.max(
+            longest,
+            formatScore(scoreSubtotalForJury(juryNumber)).length,
+            formatCell(punishmentSubtotalForJury(juryNumber), true).length,
+        );
+    }, 1);
+
+    return Math.round(
+        Math.min(MAX_BREAKDOWN_FONT_SIZE, cellWidth / (longestValue * 0.58)),
+    );
+});
 
 const numericValue = (value: string | number | null | undefined) => {
     const numberValue = Number(value ?? 0);
@@ -372,26 +428,6 @@ const punishmentValue = (
     return Math.abs(numericValue(rawValue));
 };
 
-const acceptedScoreTotal = (criterion: ScoreCriterion) => {
-    return juries.value.reduce((total, juryNumber) => {
-        if (!isAccepted(juryNumber)) {
-            return total;
-        }
-
-        return total + scoreValue(criterion, juryNumber);
-    }, 0);
-};
-
-const acceptedPunishmentTotal = (criterion: PunishmentCriterion) => {
-    return juries.value.reduce((total, juryNumber) => {
-        if (!isAccepted(juryNumber)) {
-            return total;
-        }
-
-        return total + punishmentValue(criterion, juryNumber);
-    }, 0);
-};
-
 const scoreSubtotalForJury = (juryNumber: number) => {
     return scoreCriteria.value.reduce(
         (total, criterion) => total + scoreValue(criterion, juryNumber),
@@ -410,24 +446,6 @@ const punishmentSubtotalForJury = (juryNumber: number) => {
     );
 };
 
-const totalScore = computed(() => {
-    return scoreCriteria.value.reduce(
-        (total, criterion) => total + acceptedScoreTotal(criterion),
-        0,
-    );
-});
-
-const totalPunishment = computed(() => {
-    return punishmentCriteria.value.reduce(
-        (total, criterion) => total + acceptedPunishmentTotal(criterion),
-        0,
-    );
-});
-
-const finalScore = computed(() => {
-    return numericValue(currentMatch.value?.total_score);
-});
-
 const recapCards = computed(() => {
     const match = currentMatch.value;
 
@@ -437,7 +455,7 @@ const recapCards = computed(() => {
                 label: 'Nilai Akhir',
                 value: formatScore(numericValue(match?.total_score)),
                 valueClass: 'text-black',
-                cardClass: 'border-yellow-500/30 bg-yellow-400 text-black',
+                cardClass: 'border-yellow-600 bg-yellow-400 text-black',
             },
             {
                 label: 'Kualitas Teknik',
@@ -471,7 +489,7 @@ const recapCards = computed(() => {
             label: 'Nilai Akhir',
             value: formatScore(numericValue(match?.total_score)),
             valueClass: 'text-black',
-            cardClass: 'border-yellow-500/30 bg-yellow-400 text-black',
+            cardClass: 'border-yellow-600 bg-yellow-400 text-black',
         },
         {
             label: 'Wiraga',
@@ -500,16 +518,12 @@ const recapCards = computed(() => {
     ];
 });
 
-const shouldShowRecapCards = computed(() => {
-    return ['paused', 'done'].includes(currentMatch.value?.status ?? '');
-});
+const isTimerDisplayed = computed(() => Boolean(localTimer.value.is_display));
 
-const shouldShowActiveTimer = computed(() => {
-    return (
-        currentMatch.value?.status === 'ongoing' &&
-        Boolean(localTimer.value.is_display)
-    );
-});
+/** What the header's centre cell falls back to, as on the tanding board. */
+const timerFallbackLabel = computed(
+    () => props.arena?.arena_name ?? props.arena?.gelanggang_id ?? '-',
+);
 
 const formatScore = (value: number) => {
     return value.toLocaleString('id-ID', {
@@ -985,7 +999,7 @@ onUnmounted(() => {
         <template v-else>
             <div class="relative z-10 flex h-full w-full flex-col bg-zinc-900">
                 <div
-                    class="grid h-12 w-full shrink-0 grid-cols-[1fr_auto_1fr] items-center border-b border-stone-800 bg-zinc-900 px-6 text-[11px] font-bold tracking-widest text-muted-foreground uppercase shadow-sm"
+                    class="grid h-16 w-full shrink-0 grid-cols-[1fr_auto_1fr] items-center border-b border-stone-800 bg-zinc-900 px-6 text-base font-bold tracking-widest text-muted-foreground uppercase shadow-sm"
                 >
                     <div class="flex items-center gap-3 justify-self-start">
                         <FightFullscreenButton
@@ -999,7 +1013,7 @@ onUnmounted(() => {
                         <span class="font-bold text-yellow-500">{{
                             secretaryLabel
                         }}</span>
-                        <div class="h-4 w-px bg-stone-800"></div>
+                        <div class="h-6 w-px bg-stone-800"></div>
                         <span>
                             Gelanggang
                             {{
@@ -1010,352 +1024,217 @@ onUnmounted(() => {
                         </span>
                     </div>
 
-                    <div class="px-4 text-center text-[11px] text-white">
+                    <div class="px-4 text-center text-xl text-white">
                         {{ matchMetaLabel || '-' }}
                     </div>
 
                     <div class="flex items-center gap-3 justify-self-end">
-                        <div class="h-4 w-px bg-stone-800"></div>
+                        <div class="h-6 w-px bg-stone-800"></div>
                         <span>
                             No Partai
-                            <span class="ml-1 text-xs text-white tabular-nums">
+                            <span class="ml-1 text-xl text-white tabular-nums">
                                 {{ currentMatch?.matches_code ?? '-' }}
                             </span>
                         </span>
-                        <div class="h-4 w-px bg-stone-800"></div>
+                        <div class="h-6 w-px bg-stone-800"></div>
                         <span>
                             No Penampil
-                            <span class="ml-1 text-xs text-white tabular-nums">
+                            <span class="ml-1 text-xl text-white tabular-nums">
                                 {{ currentMatch?.no_order ?? '-' }}
                             </span>
                         </span>
                     </div>
                 </div>
 
+                <!--
+                    The tanding board's header, with seni's own figures: a
+                    title row that doubles as the fullscreen target, then one
+                    mono row of the three numbers an audience looks for. The
+                    timer lives here rather than in a bar of its own, so the
+                    board stops shifting when a performance starts and ends.
+                -->
                 <div
-                    class="z-10 flex h-20 w-full shrink-0 items-center justify-center border-b border-yellow-600/40 bg-yellow-400 px-6 py-3 text-black shadow-xl"
+                    class="flex h-52 w-full shrink-0 bg-zinc-950 px-7 pt-5 text-center"
                 >
-                    <div class="min-w-0 text-center">
+                    <div
+                        class="flex h-full w-full flex-col overflow-hidden rounded-2xl border border-stone-800 bg-zinc-900 shadow-2xl"
+                    >
                         <div
-                            class="flex flex-wrap items-center justify-center gap-x-3"
+                            class="flex h-24 shrink-0 cursor-pointer flex-col items-center justify-center border-b border-stone-800 bg-yellow-400 px-8 text-black"
+                            :title="buttonTitle"
+                            @click="triggerFullscreen"
                         >
-                            <h1
-                                v-for="athlete in athleteNames"
-                                :key="athlete"
-                                class="text-2xl leading-none font-bold tracking-wide uppercase"
+                            <div
+                                class="flex flex-wrap items-center justify-center gap-x-4"
                             >
-                                {{ athlete }}
-                            </h1>
+                                <h1
+                                    v-for="athlete in athleteNames"
+                                    :key="athlete"
+                                    class="text-3xl leading-none font-black tracking-wide uppercase"
+                                >
+                                    {{ athlete }}
+                                </h1>
+                            </div>
+                            <p
+                                class="mt-1.5 text-2xl font-black tracking-widest uppercase"
+                            >
+                                {{ currentMatch?.contingent ?? '-' }}
+                            </p>
                         </div>
-                        <p
-                            class="mt-1 py-1 text-[18px] font-bold text-black uppercase"
-                        >
-                            {{ currentMatch?.contingent ?? '-' }}
-                        </p>
-                    </div>
-                </div>
 
-                <div
-                    v-if="shouldShowActiveTimer"
-                    class="flex h-20 shrink-0 items-center justify-center border-b border-stone-800 bg-zinc-950 px-6 text-center shadow-lg"
-                >
-                    <div>
-                        <p
-                            class="text-[10px] font-black tracking-[0.22em] text-yellow-400 uppercase"
+                        <div
+                            class="grid min-h-0 flex-1 grid-cols-[1fr_1.35fr_1fr] font-mono text-stone-100 uppercase tabular-nums"
                         >
-                            Timer
-                        </p>
-                        <p
-                            class="font-mono text-5xl leading-none font-black tracking-widest text-white tabular-nums"
-                        >
-                            {{ formattedTimer }}
-                        </p>
+                            <div
+                                class="flex items-center justify-center border-r border-stone-800 bg-zinc-900"
+                            >
+                                <span class="text-6xl font-black">
+                                    PARTAI
+                                    {{ currentMatch?.matches_code ?? '-' }}
+                                </span>
+                            </div>
+                            <div
+                                class="flex items-center justify-center border-r border-stone-800 bg-zinc-900"
+                            >
+                                <span
+                                    v-if="isTimerDisplayed"
+                                    class="text-6xl font-black tracking-widest"
+                                >
+                                    {{ formattedTimer }}
+                                </span>
+                                <span
+                                    v-else
+                                    class="max-w-full truncate px-6 text-4xl font-black tracking-widest"
+                                >
+                                    {{ timerFallbackLabel }}
+                                </span>
+                            </div>
+                            <div
+                                class="flex items-center justify-center bg-zinc-900"
+                            >
+                                <span class="text-6xl font-black">
+                                    PENAMPIL
+                                    {{ currentMatch?.no_order ?? '-' }}
+                                </span>
+                            </div>
+                        </div>
                     </div>
                 </div>
 
                 <main
-                    class="custom-scrollbar min-h-0 flex-1 overflow-y-auto bg-zinc-950 p-4 px-6"
+                    class="flex min-h-0 flex-1 flex-col gap-5 overflow-hidden bg-zinc-950 p-7"
                 >
-                    <section
-                        class="overflow-hidden rounded-lg border border-zinc-800/70 bg-zinc-900 shadow-[0_18px_50px_rgba(0,0,0,0.24)]"
+                    <!--
+                        One column per jury, built like the tanding board's
+                        jury recap: muted header bands, a labelled split row,
+                        then the final score - the only cell that carries the
+                        accepted / rejected verdict.
+                    -->
+                    <div
+                        class="grid min-h-0 flex-1 overflow-hidden rounded-2xl border border-stone-800 bg-zinc-900 shadow-2xl"
+                        :style="{
+                            gridTemplateColumns: `repeat(${juries.length}, minmax(0, 1fr))`,
+                        }"
                     >
-                        <div class="overflow-x-auto">
-                            <table
-                                class="w-full min-w-[780px] border-collapse bg-zinc-900 text-sm"
+                        <div
+                            v-for="(juryNumber, index) in juries"
+                            :key="juryNumber"
+                            :class="[
+                                'flex min-w-0 flex-col',
+                                index === juries.length - 1
+                                    ? ''
+                                    : 'border-r border-stone-800',
+                            ]"
+                        >
+                            <div
+                                class="flex h-12 shrink-0 items-center justify-center border-b border-stone-800 bg-black/40 text-xl font-black tracking-widest text-stone-200 uppercase"
                             >
-                                <thead>
-                                    <tr
-                                        class="border-b border-zinc-800/70 bg-zinc-950/60 text-center text-[13px] font-bold tracking-widest text-white uppercase"
-                                    >
-                                        <th
-                                            class="w-[260px] border-r border-zinc-800/70 px-4 py-2.5 text-left text-yellow-400"
-                                        >
-                                            Kriteria
-                                        </th>
-                                        <th
-                                            v-for="juryNumber in juries"
-                                            :key="juryNumber"
-                                            :class="[
-                                                'border-r border-zinc-800/70 px-2 py-2.5',
-                                                juryHeaderClass(juryNumber),
-                                            ]"
-                                        >
-                                            Juri {{ juryNumber }}
-                                        </th>
-                                        <th
-                                            class="w-[120px] px-3 py-2.5 text-white"
-                                        >
-                                            Total
-                                        </th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    <tr
-                                        v-for="criterion in scoreCriteria"
-                                        :key="criterion.key"
-                                        class="border-b border-zinc-800/60 text-center transition-colors"
-                                    >
-                                        <th
-                                            class="text-md border-r border-zinc-800/70 bg-zinc-900 px-4 py-2.5 text-left font-bold tracking-wide text-white uppercase"
-                                        >
-                                            {{ criterion.label }}
-                                        </th>
-                                        <td
-                                            v-for="juryNumber in juries"
-                                            :key="juryNumber"
-                                            :class="[
-                                                'border-r px-2 py-2.5 text-xl font-bold text-white tabular-nums',
-                                                juryStateClass(juryNumber),
-                                            ]"
-                                        >
-                                            {{
-                                                formatCell(
-                                                    scoreValue(
-                                                        criterion,
-                                                        juryNumber,
-                                                    ),
-                                                )
-                                            }}
-                                        </td>
-                                        <td
-                                            class="px-3 py-2.5 text-xl font-bold text-yellow-300 tabular-nums"
-                                        >
-                                            {{
-                                                formatScore(
-                                                    acceptedScoreTotal(
-                                                        criterion,
-                                                    ),
-                                                )
-                                            }}
-                                        </td>
-                                    </tr>
+                                Juri {{ juryNumber }}
+                            </div>
 
-                                    <tr
-                                        class="border-b border-zinc-800/70 bg-zinc-950/35 text-center"
-                                    >
-                                        <th
-                                            class="border-r border-zinc-800/70 px-4 py-2.5 text-left text-lg font-bold tracking-wide text-yellow-300 uppercase"
-                                        >
-                                            Total
-                                        </th>
-                                        <td
-                                            v-for="juryNumber in juries"
-                                            :key="juryNumber"
-                                            :class="[
-                                                'border-r px-2 py-2.5 text-xl font-bold tabular-nums',
-                                                juryStateClass(juryNumber),
-                                                'text-yellow-400',
-                                            ]"
-                                        >
-                                            {{
-                                                formatScore(
-                                                    scoreSubtotalForJury(
-                                                        juryNumber,
-                                                    ),
-                                                )
-                                            }}
-                                        </td>
-                                        <td
-                                            class="px-3 py-2.5 text-xl font-bold text-yellow-300 tabular-nums"
-                                        >
-                                            {{ formatScore(totalScore) }}
-                                        </td>
-                                    </tr>
+                            <div
+                                class="grid h-9 shrink-0 grid-cols-2 border-b border-stone-800 bg-black/40 text-center text-sm font-black tracking-widest text-muted-foreground uppercase"
+                            >
+                                <div
+                                    class="flex items-center justify-center border-r border-stone-800"
+                                >
+                                    Nilai
+                                </div>
+                                <div class="flex items-center justify-center">
+                                    Hukuman
+                                </div>
+                            </div>
 
-                                    <tr
-                                        class="border-b border-zinc-800/70 bg-zinc-950/60 text-center text-[12px] font-bold tracking-widest text-white uppercase"
-                                    >
-                                        <th
-                                            class="px-4 py-1 text-left text-red-500"
-                                        >
-                                            Hukuman
-                                        </th>
-                                        <td
-                                            v-for="juryNumber in juries"
-                                            :key="juryNumber"
-                                            :class="['px-2 py-2.5']"
-                                        ></td>
-                                        <td class="px-3 py-2.5"></td>
-                                    </tr>
+                            <div
+                                class="grid h-24 shrink-0 grid-cols-2 border-b border-stone-800 text-center leading-none font-black tabular-nums"
+                                :style="{
+                                    fontSize: `${juryBreakdownFontSize}px`,
+                                }"
+                            >
+                                <div
+                                    class="flex items-center justify-center border-r border-stone-800 px-2 text-white"
+                                >
+                                    {{
+                                        formatScore(
+                                            scoreSubtotalForJury(juryNumber),
+                                        )
+                                    }}
+                                </div>
+                                <div
+                                    class="flex items-center justify-center px-2 text-red-500"
+                                >
+                                    {{
+                                        formatCell(
+                                            punishmentSubtotalForJury(
+                                                juryNumber,
+                                            ),
+                                            true,
+                                        )
+                                    }}
+                                </div>
+                            </div>
 
-                                    <tr
-                                        v-for="punishment in punishmentCriteria"
-                                        :key="punishment.key"
-                                        class="border-b border-zinc-800/60 text-center transition-colors"
-                                    >
-                                        <th
-                                            class="text-md border-r border-zinc-800/70 bg-zinc-900 px-4 py-2.5 text-left font-bold tracking-wide text-white uppercase"
-                                        >
-                                            {{ punishment.label }}
-                                        </th>
-                                        <td
-                                            v-for="juryNumber in juries"
-                                            :key="juryNumber"
-                                            :class="[
-                                                'border-r px-2 py-2.5 text-lg font-bold tabular-nums',
-                                                juryStateClass(juryNumber),
-                                                'text-white',
-                                            ]"
-                                        >
-                                            {{
-                                                formatCell(
-                                                    punishmentValue(
-                                                        punishment,
-                                                        juryNumber,
-                                                    ),
-                                                    true,
-                                                )
-                                            }}
-                                        </td>
-                                        <td
-                                            class="px-3 py-2.5 text-xl font-bold text-red-500 tabular-nums"
-                                        >
-                                            {{
-                                                formatCell(
-                                                    acceptedPunishmentTotal(
-                                                        punishment,
-                                                    ),
-                                                    true,
-                                                )
-                                            }}
-                                        </td>
-                                    </tr>
-
-                                    <tr class="bg-zinc-950/35 text-center">
-                                        <th
-                                            class="border-r border-zinc-800/70 px-4 py-2.5 text-left text-lg font-bold tracking-wide text-red-500 uppercase"
-                                        >
-                                            Total Hukuman
-                                        </th>
-                                        <td
-                                            v-for="juryNumber in juries"
-                                            :key="juryNumber"
-                                            :class="[
-                                                'border-r px-2 py-2.5 text-xl font-bold tabular-nums',
-                                                juryStateClass(juryNumber),
-                                                'text-red-500',
-                                            ]"
-                                        >
-                                            {{
-                                                formatCell(
-                                                    punishmentSubtotalForJury(
-                                                        juryNumber,
-                                                    ),
-                                                    true,
-                                                )
-                                            }}
-                                        </td>
-                                        <td
-                                            class="px-3 py-2.5 text-xl font-bold text-red-500 tabular-nums"
-                                        >
-                                            {{
-                                                formatCell(
-                                                    totalPunishment,
-                                                    true,
-                                                )
-                                            }}
-                                        </td>
-                                    </tr>
-
-                                    <tr class="h-3 bg-zinc-950/80">
-                                        <td
-                                            :colspan="juries.length + 2"
-                                            class="border-t border-zinc-800/70"
-                                        ></td>
-                                    </tr>
-
-                                    <tr
-                                        class="border-t border-zinc-800/70 bg-zinc-950/60 text-center"
-                                    >
-                                        <th
-                                            class="border-r border-zinc-800/70 px-4 py-2.5 text-left text-lg font-bold tracking-wide text-yellow-300 uppercase"
-                                        >
-                                            Nilai Akhir
-                                        </th>
-                                        <td
-                                            v-for="juryNumber in juries"
-                                            :key="juryNumber"
-                                            :class="[
-                                                'border-r px-2 py-2.5 text-xl font-bold text-yellow-300 tabular-nums',
-                                                juryStateClass(juryNumber),
-                                            ]"
-                                        >
-                                            {{
-                                                formatScore(
-                                                    finalScoreForJury(
-                                                        juryNumber,
-                                                    ),
-                                                )
-                                            }}
-                                        </td>
-                                        <td
-                                            class="px-3 py-2.5 text-xl font-bold text-yellow-300 tabular-nums"
-                                        >
-                                            {{ formatScore(finalScore) }}
-                                        </td>
-                                    </tr>
-                                </tbody>
-                            </table>
+                            <div
+                                :class="[
+                                    'flex min-h-0 flex-1 items-center justify-center px-3 leading-none font-black tabular-nums',
+                                    juryTotalClass(juryNumber),
+                                ]"
+                                :style="{ fontSize: `${juryTotalFontSize}px` }"
+                            >
+                                {{ formatScore(finalScoreForJury(juryNumber)) }}
+                            </div>
                         </div>
-                    </section>
+                    </div>
 
+                    <!-- The partai's own totals, one card each. -->
                     <section
-                        v-if="shouldShowRecapCards"
-                        class="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-5"
+                        class="grid shrink-0 gap-4"
+                        :style="{
+                            gridTemplateColumns: `repeat(${recapCards.length}, minmax(0, 1fr))`,
+                        }"
                     >
                         <div
                             v-for="card in recapCards"
                             :key="card.label"
                             :class="[
-                                'rounded-md border p-3 shadow-lg',
+                                'flex flex-col items-center overflow-hidden rounded-xl border px-4 py-4 text-center shadow-lg',
                                 card.cardClass,
                             ]"
                         >
                             <p
-                                class="text-[10px] font-bold tracking-[0.16em] uppercase opacity-70"
+                                class="text-sm font-black tracking-widest uppercase opacity-70"
                             >
                                 {{ card.label }}
                             </p>
                             <p
                                 :class="[
-                                    'mt-1 text-2xl font-bold tabular-nums',
+                                    'mt-2 text-6xl leading-none font-black tabular-nums',
                                     card.valueClass,
                                 ]"
                             >
                                 {{ card.value }}
                             </p>
                         </div>
-                    </section>
-
-                    <section
-                        v-else
-                        class="mt-3 rounded-md border border-stone-800 bg-zinc-900 px-4 py-5 text-center shadow-lg"
-                    >
-                        <p
-                            class="text-sm font-bold tracking-[0.16em] text-yellow-400 uppercase"
-                        >
-                            Penampilan Sedang berlangsung
-                        </p>
                     </section>
                 </main>
             </div>
