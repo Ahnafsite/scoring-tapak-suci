@@ -25,7 +25,9 @@ import { Card, CardHeader, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
 import { RefreshCw } from 'lucide-vue-next';
+import ControlSidebarToggle from '@/components/ControlSidebarToggle.vue';
 import { Toaster } from '@/components/ui/sonner';
+import { useControlSidebar } from '@/composables/useControlSidebar';
 import { useFullscreenLock } from '@/composables/useFullscreenLock';
 import { toast } from 'vue-sonner';
 
@@ -47,6 +49,12 @@ const {
     requiredExitClicks,
     triggerFullscreen,
 } = useFullscreenLock();
+const {
+    close: closeSidebar,
+    closeOnNarrowScreen: closeSidebarOnNarrowScreen,
+    isOpen: isSidebarOpen,
+    toggle: toggleSidebar,
+} = useControlSidebar();
 
 const isConfirmDialogOpen = ref(false);
 const selectedMatch = ref<any>(null);
@@ -234,6 +242,9 @@ const openConfirm = (match: any) => {
         return; // disabled click if active match is not purely done/not_started
     }
     selectedMatch.value = match;
+    // On a tablet the sidebar covers the board, and the operator's next move
+    // after confirming is to watch it.
+    closeSidebarOnNarrowScreen();
     isConfirmDialogOpen.value = true;
 };
 
@@ -903,9 +914,30 @@ onUnmounted(() => {
     <Head title="Control Panel - Tapak Suci" />
     <Toaster rich-colors position="top-right" />
     <div class="flex h-screen overflow-hidden bg-background text-foreground">
+        <!-- Sidebar backdrop, only while the sidebar overlays the panel -->
+        <Transition
+            enter-active-class="transition-opacity duration-300 ease-out"
+            leave-active-class="transition-opacity duration-300 ease-out"
+            enter-from-class="opacity-0"
+            leave-to-class="opacity-0"
+        >
+            <div
+                v-if="isSidebarOpen"
+                class="fixed inset-0 z-20 bg-black/60 xl:hidden"
+                @click="closeSidebar"
+            ></div>
+        </Transition>
+
         <!-- Sidebar -->
         <div
-            class="z-10 flex h-full w-92 shrink-0 flex-col border-r border-border bg-zinc-900 shadow-xl"
+            :inert="!isSidebarOpen"
+            :class="[
+                'fixed inset-y-0 left-0 z-30 flex w-92 flex-col border-r border-border bg-zinc-900 shadow-xl transition-[transform,margin] duration-300 ease-out',
+                'xl:static xl:z-10 xl:h-full xl:shrink-0 xl:translate-x-0',
+                isSidebarOpen
+                    ? 'translate-x-0 xl:ml-0'
+                    : '-translate-x-full xl:-ml-92',
+            ]"
         >
             <!-- Sidebar Header -->
             <div class="flex flex-col border-b border-stone-700 p-6">
@@ -1129,7 +1161,10 @@ onUnmounted(() => {
                 <div
                     class="z-10 flex h-16 w-full shrink-0 items-center justify-between border-b border-stone-800 bg-zinc-900 px-6"
                 >
-                    <div class="h-9 w-9 shrink-0"></div>
+                    <ControlSidebarToggle
+                        :open="isSidebarOpen"
+                        @toggle="toggleSidebar"
+                    />
                     <h1
                         class="text-center text-2xl font-black tracking-widest text-white uppercase"
                     >
@@ -1861,6 +1896,11 @@ onUnmounted(() => {
                 </div>
             </template>
             <template v-else>
+                <ControlSidebarToggle
+                    class="absolute top-4 left-4 z-10"
+                    :open="isSidebarOpen"
+                    @toggle="toggleSidebar"
+                />
                 <FightWaitingState
                     clickable
                     :on-logo-click="triggerFullscreen"

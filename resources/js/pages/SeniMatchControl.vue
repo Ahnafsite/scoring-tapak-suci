@@ -11,18 +11,14 @@ import {
     RefreshCw,
     Trophy,
 } from 'lucide-vue-next';
+import ControlSidebarToggle from '@/components/ControlSidebarToggle.vue';
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
 import { toast } from 'vue-sonner';
 import FightFullscreenButton from '@/components/fight/FightFullscreenButton.vue';
 import FightWaitingState from '@/components/fight/FightWaitingState.vue';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import {
-    Card,
-    CardContent,
-    CardFooter,
-    CardHeader,
-} from '@/components/ui/card';
+import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import {
     Dialog,
     DialogContent,
@@ -42,6 +38,7 @@ import {
 } from '@/components/ui/select';
 import { Separator } from '@/components/ui/separator';
 import { Toaster } from '@/components/ui/sonner';
+import { useControlSidebar } from '@/composables/useControlSidebar';
 import { useFullscreenLock } from '@/composables/useFullscreenLock';
 
 type SeniPool = {
@@ -159,6 +156,12 @@ const {
     requiredExitClicks,
     triggerFullscreen,
 } = useFullscreenLock();
+const {
+    close: closeSidebar,
+    closeOnNarrowScreen: closeSidebarOnNarrowScreen,
+    isOpen: isSidebarOpen,
+    toggle: toggleSidebar,
+} = useControlSidebar();
 
 const activePoolTitle = computed(() => {
     if (!selectedPool.value) {
@@ -592,6 +595,8 @@ const openPoolConfirm = (pool: SeniPool) => {
     }
 
     pendingPool.value = pool;
+    // On a tablet the sidebar covers the panel the operator is about to use.
+    closeSidebarOnNarrowScreen();
     isConfirmDialogOpen.value = true;
 };
 
@@ -1221,8 +1226,29 @@ onUnmounted(() => {
     <Toaster rich-colors />
 
     <div class="flex h-screen overflow-hidden bg-background text-foreground">
+        <!-- Sidebar backdrop, only while the sidebar overlays the panel -->
+        <Transition
+            enter-active-class="transition-opacity duration-300 ease-out"
+            leave-active-class="transition-opacity duration-300 ease-out"
+            enter-from-class="opacity-0"
+            leave-to-class="opacity-0"
+        >
+            <div
+                v-if="isSidebarOpen"
+                class="fixed inset-0 z-20 bg-black/60 xl:hidden"
+                @click="closeSidebar"
+            ></div>
+        </Transition>
+
         <div
-            class="z-10 flex h-full w-92 shrink-0 flex-col border-r border-border bg-zinc-900 shadow-xl"
+            :inert="!isSidebarOpen"
+            :class="[
+                'fixed inset-y-0 left-0 z-30 flex w-92 flex-col border-r border-border bg-zinc-900 shadow-xl transition-[transform,margin] duration-300 ease-out',
+                'xl:static xl:z-10 xl:h-full xl:shrink-0 xl:translate-x-0',
+                isSidebarOpen
+                    ? 'translate-x-0 xl:ml-0'
+                    : '-translate-x-full xl:-ml-92',
+            ]"
         >
             <div class="flex flex-col border-b border-stone-700 p-6">
                 <Button @click="openSetup" class="w-full">
@@ -1336,7 +1362,10 @@ onUnmounted(() => {
             <div
                 class="z-10 flex h-16 w-full shrink-0 items-center justify-between border-b border-stone-800 bg-zinc-900 px-6"
             >
-                <div class="h-9 w-9 shrink-0"></div>
+                <ControlSidebarToggle
+                    :open="isSidebarOpen"
+                    @toggle="toggleSidebar"
+                />
                 <h1 class="text-center text-xl font-black text-white uppercase">
                     {{ activePoolTitle }}
                 </h1>
@@ -1353,17 +1382,23 @@ onUnmounted(() => {
             <template v-if="selectedPool">
                 <div class="z-10 flex flex-1 flex-col overflow-hidden">
                     <div
-                        class="grid min-h-0 flex-1 grid-cols-[320px_minmax(0,1fr)] gap-6 overflow-hidden p-6"
+                        class="flex min-h-0 flex-1 flex-col gap-6 overflow-hidden p-6"
                     >
-                        <div class="flex min-h-0 flex-col gap-4">
+                        <!--
+                            Section 1 - the partai on the mat. Laid out across
+                            the panel instead of down a 320px column, so on a
+                            tablet every number stays on screen rather than
+                            hiding below a scroll.
+                        -->
+                        <section class="shrink-0">
                             <Card
-                                class="flex min-h-0 flex-1 flex-col gap-0 overflow-hidden border-stone-800 bg-zinc-900 py-0 shadow-lg"
+                                class="flex flex-col gap-0 overflow-hidden border-stone-800 bg-zinc-900 py-0 shadow-lg"
                             >
                                 <CardHeader
                                     class="border-b border-stone-800 bg-black/30 px-5 py-4"
                                 >
                                     <div
-                                        class="flex items-start justify-between gap-3"
+                                        class="flex flex-wrap items-center justify-between gap-3"
                                     >
                                         <div class="min-w-0">
                                             <p
@@ -1372,7 +1407,7 @@ onUnmounted(() => {
                                                 Partai Aktif
                                             </p>
                                             <p
-                                                class="mt-1 truncate text-sm font-bold text-white"
+                                                class="mt-1 truncate text-lg font-black text-white"
                                             >
                                                 {{
                                                     activeMatch?.matches_code
@@ -1384,42 +1419,61 @@ onUnmounted(() => {
                                                 }}
                                             </p>
                                         </div>
+
+                                        <Badge
+                                            v-if="activeMatch"
+                                            :class="[
+                                                'px-5 py-2 text-sm font-black tracking-widest uppercase',
+                                                statusMeta(
+                                                    activeMatch.status,
+                                                    activeMatch.is_disqualified,
+                                                ).class,
+                                            ]"
+                                        >
+                                            {{
+                                                statusMeta(
+                                                    activeMatch.status,
+                                                    activeMatch.is_disqualified,
+                                                ).label
+                                            }}
+                                        </Badge>
                                     </div>
                                 </CardHeader>
 
                                 <CardContent
                                     v-if="activeMatch"
-                                    class="custom-scrollbar flex flex-1 flex-col overflow-y-auto px-5 py-5"
+                                    class="flex flex-wrap items-stretch gap-4 px-5 py-5"
                                 >
                                     <div
-                                        v-for="(
-                                            row, index
-                                        ) in activeIdentityRows"
-                                        :key="row.label"
-                                        :class="[
-                                            'space-y-1',
-                                            index > 0 ? 'mt-5' : '',
-                                        ]"
+                                        class="min-w-0 flex-[2_1_18rem] rounded-md border border-stone-800 bg-black/30 p-4"
                                     >
-                                        <p
-                                            class="text-[11px] font-black tracking-widest text-muted-foreground uppercase"
+                                        <div
+                                            v-for="(
+                                                row, index
+                                            ) in activeIdentityRows"
+                                            :key="row.label"
+                                            :class="index > 0 ? 'mt-4' : ''"
                                         >
-                                            {{ row.label }}
-                                        </p>
-                                        <p
-                                            :class="[
-                                                'font-bold text-white uppercase',
-                                                row.label === 'Nama'
-                                                    ? 'text-lg leading-tight font-black'
-                                                    : 'text-sm',
-                                            ]"
-                                        >
-                                            {{ displayValue(row.value) }}
-                                        </p>
+                                            <p
+                                                class="text-[11px] font-black tracking-widest text-muted-foreground uppercase"
+                                            >
+                                                {{ row.label }}
+                                            </p>
+                                            <p
+                                                :class="[
+                                                    'mt-1 font-bold text-white uppercase',
+                                                    row.label === 'Nama'
+                                                        ? 'text-2xl leading-tight font-black'
+                                                        : 'text-base',
+                                                ]"
+                                            >
+                                                {{ displayValue(row.value) }}
+                                            </p>
+                                        </div>
                                     </div>
 
                                     <div
-                                        class="mt-6 rounded-md border border-yellow-500/20 bg-yellow-500/10 p-4 text-center"
+                                        class="flex flex-[1_1_13rem] flex-col justify-center rounded-md border border-yellow-500/20 bg-yellow-500/10 p-4 text-center"
                                     >
                                         <p
                                             class="text-[11px] font-black tracking-widest text-yellow-400 uppercase"
@@ -1437,91 +1491,66 @@ onUnmounted(() => {
                                         </p>
                                     </div>
 
-                                    <div class="mt-4 grid grid-cols-2 gap-3">
-                                        <div
-                                            v-for="row in activeMetaRows"
-                                            :key="row.label"
-                                            class="rounded-md border border-stone-800 bg-black/30 p-3"
+                                    <div
+                                        v-for="row in activeScoreRows"
+                                        :key="row.label"
+                                        class="flex flex-[1_1_11rem] flex-col justify-center rounded-md border border-stone-800 bg-black/30 p-4 text-center"
+                                    >
+                                        <p
+                                            class="text-[11px] font-black tracking-widest text-muted-foreground uppercase"
                                         >
-                                            <p
-                                                class="text-[10px] font-black tracking-widest text-muted-foreground uppercase"
-                                            >
-                                                {{ row.label }}
-                                            </p>
-                                            <p
-                                                class="mt-1 text-xl font-black text-white tabular-nums"
-                                            >
-                                                {{ row.value }}
-                                            </p>
-                                        </div>
+                                            {{ row.label }}
+                                        </p>
+                                        <p
+                                            :class="[
+                                                'mt-1 text-4xl font-black tabular-nums',
+                                                row.isPunishment
+                                                    ? 'text-red-500'
+                                                    : 'text-white',
+                                            ]"
+                                        >
+                                            {{
+                                                row.isPunishment
+                                                    ? punishmentValue(row.value)
+                                                    : scoreValue(row.value)
+                                            }}
+                                        </p>
                                     </div>
 
-                                    <div class="mt-4 grid gap-2">
-                                        <div
-                                            v-for="row in activeScoreRows"
-                                            :key="row.label"
-                                            class="flex items-center justify-between gap-3 rounded-md border border-stone-800 bg-black/30 px-3 py-2"
+                                    <div
+                                        v-for="row in activeMetaRows"
+                                        :key="row.label"
+                                        class="flex flex-[1_1_9rem] flex-col justify-center rounded-md border border-stone-800 bg-black/30 p-4 text-center"
+                                    >
+                                        <p
+                                            class="text-[11px] font-black tracking-widest text-muted-foreground uppercase"
                                         >
-                                            <span
-                                                class="text-[11px] font-black tracking-wider text-muted-foreground uppercase"
-                                            >
-                                                {{ row.label }}
-                                            </span>
-                                            <span
-                                                :class="[
-                                                    'font-black tabular-nums',
-                                                    row.isPunishment
-                                                        ? 'text-red-500'
-                                                        : 'text-white',
-                                                ]"
-                                            >
-                                                {{
-                                                    row.isPunishment
-                                                        ? punishmentValue(
-                                                              row.value,
-                                                          )
-                                                        : scoreValue(row.value)
-                                                }}
-                                            </span>
-                                        </div>
+                                            {{ row.label }}
+                                        </p>
+                                        <p
+                                            class="mt-1 text-3xl font-black text-white tabular-nums"
+                                        >
+                                            {{ row.value }}
+                                        </p>
                                     </div>
                                 </CardContent>
 
                                 <CardContent
                                     v-else
-                                    class="flex h-full flex-col items-center justify-center px-5 py-8 text-center text-sm text-muted-foreground"
+                                    class="flex flex-col items-center justify-center px-5 py-8 text-center text-sm text-muted-foreground"
                                 >
                                     <p>Belum ada partai aktif.</p>
                                     <p class="mt-1 text-xs">
                                         Pilih baris partai lalu muat data.
                                     </p>
                                 </CardContent>
-
-                                <CardFooter
-                                    v-if="activeMatch"
-                                    class="border-t border-stone-800 bg-black/30 px-5 py-4"
-                                >
-                                    <Badge
-                                        :class="[
-                                            'text-md w-full justify-center py-3 font-black tracking-widest uppercase',
-                                            statusMeta(
-                                                activeMatch.status,
-                                                activeMatch.is_disqualified,
-                                            ).class,
-                                        ]"
-                                    >
-                                        {{
-                                            statusMeta(
-                                                activeMatch.status,
-                                                activeMatch.is_disqualified,
-                                            ).label
-                                        }}
-                                    </Badge>
-                                </CardFooter>
                             </Card>
-                        </div>
+                        </section>
 
-                        <div class="flex min-h-0 flex-col overflow-hidden">
+                        <!-- Section 2 - the running order for this pool -->
+                        <section
+                            class="flex min-h-0 flex-1 flex-col overflow-hidden"
+                        >
                             <div
                                 v-if="currentMatches.length === 0"
                                 class="flex flex-1 items-center justify-center text-center text-sm text-muted-foreground"
@@ -1763,7 +1792,7 @@ onUnmounted(() => {
                                     </tbody>
                                 </table>
                             </div>
-                        </div>
+                        </section>
                     </div>
 
                     <div
