@@ -12,6 +12,7 @@ use App\Models\FightRecapJuryPoint;
 use App\Models\FightSchedule;
 use App\Models\RefPunishment;
 use App\Models\RefScore;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
@@ -583,6 +584,46 @@ class MatchSyncController extends Controller
             'success' => true,
             'message' => 'Data pertandingan berhasil disimpan dan disinkronkan.',
             'data' => $match,
+        ]);
+    }
+
+    /**
+     * Clear the local active match and its scores without contacting the scoring server.
+     *
+     * Only meant for switching events: the server no longer knows the stuck partai,
+     * so the regular reset and save flows cannot release it.
+     */
+    public function hardReset(Request $request): JsonResponse
+    {
+        if ($request->user()->role?->name !== 'Operator') {
+            abort(403, 'Unauthorized access.');
+        }
+
+        DB::transaction(function (): void {
+            $stuckScheduleIds = FightMatch::query()
+                ->whereIn('status', ['ongoing', 'paused'])
+                ->whereNotNull('fight_schedule_id')
+                ->pluck('fight_schedule_id');
+
+            if ($stuckScheduleIds->isNotEmpty()) {
+                FightSchedule::query()
+                    ->whereIn('id', $stuckScheduleIds->all())
+                    ->update([
+                        'status' => 'not_started',
+                        'winner_corner' => null,
+                        'winner_status' => null,
+                    ]);
+            }
+
+            FightDetailJuryPointBlue::query()->delete();
+            FightDetailJuryPointYellow::query()->delete();
+            FightRecapJuryPoint::query()->delete();
+            FightMatch::query()->delete();
+        });
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Partai aktif berhasil di-hard reset.',
         ]);
     }
 

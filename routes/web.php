@@ -241,6 +241,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::post('/partai/update-round', [MatchSyncController::class, 'updateRound']);
         Route::post('/partai/update-round-winner', [MatchSyncController::class, 'updateRoundWinner']);
         Route::post('/partai/save-partai-data-ts/{partai_id}', [MatchSyncController::class, 'savePartaiDataTs']);
+        Route::post('/partai/hard-reset', [MatchSyncController::class, 'hardReset']);
 
         // Jury Scoring Inputs
         Route::post('/jury/score', [JuryScoreController::class, 'storeScore']);

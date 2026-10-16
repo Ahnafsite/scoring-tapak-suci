@@ -24,7 +24,7 @@ import {
 import { Card, CardHeader, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
-import { RefreshCw } from 'lucide-vue-next';
+import { ListRestart, RefreshCw, TriangleAlert } from 'lucide-vue-next';
 import ControlSidebarToggle from '@/components/ControlSidebarToggle.vue';
 import { Toaster } from '@/components/ui/sonner';
 import { useControlSidebar } from '@/composables/useControlSidebar';
@@ -63,6 +63,8 @@ const currentRecapDetail = ref<any>(props.recapJuryPoint || null);
 const isSyncing = ref(false);
 const isResetDialogOpen = ref(false);
 const isResetting = ref(false);
+const isHardResetDialogOpen = ref(false);
+const isHardResetting = ref(false);
 
 const isWinnerDialogOpen = ref(false);
 const suggestedWinner = ref('');
@@ -492,6 +494,43 @@ const confirmReset = async () => {
         toast.error('Gagal reset pertandingan.');
     } finally {
         isResetting.value = false;
+    }
+};
+
+// Only for switching events: the scoring server no longer knows the stuck
+// partai, so the regular reset cannot release it. Nothing is sent to the server.
+const confirmHardReset = async () => {
+    isHardResetting.value = true;
+
+    try {
+        await axios.post('/api/partai/hard-reset');
+
+        localStorage.removeItem('pending_keputusan_match_code');
+        Object.keys(localStorage)
+            .filter((key) => key.startsWith('pending_round_decision_'))
+            .forEach((key) => localStorage.removeItem(key));
+
+        currentMatchDetail.value = null;
+        currentRecapDetail.value = [];
+        isWinnerDialogOpen.value = false;
+        isMatchWinnerDialogOpen.value = false;
+        isHardResetDialogOpen.value = false;
+
+        try {
+            await refreshArenaSchedules();
+        } catch (e) {
+            console.error('Failed to refresh schedule after hard reset', e);
+        }
+
+        router.reload({
+            only: ['schedules', 'arena', 'activeMatch', 'recapJuryPoint'],
+        });
+        toast.success('Partai aktif dikosongkan. Silakan pilih partai baru.');
+    } catch (e) {
+        console.error('Failed to hard reset match', e);
+        toast.error('Gagal hard reset partai.');
+    } finally {
+        isHardResetting.value = false;
     }
 };
 
@@ -990,18 +1029,34 @@ onUnmounted(() => {
                         }}</span>
                     </p>
                 </div>
-                <Button
-                    variant="outline"
-                    size="sm"
-                    @click="refreshSchedule"
-                    :disabled="isRefreshing"
-                    class="text-muted-foreground hover:text-foreground"
-                >
-                    <RefreshCw
-                        :class="['h-4 w-4', isRefreshing ? 'animate-spin' : '']"
-                    />
-                    Refresh
-                </Button>
+                <div class="flex items-center gap-2">
+                    <Button
+                        variant="outline"
+                        size="sm"
+                        @click="refreshSchedule"
+                        :disabled="isRefreshing"
+                        class="text-muted-foreground hover:text-foreground"
+                    >
+                        <RefreshCw
+                            :class="[
+                                'h-4 w-4',
+                                isRefreshing ? 'animate-spin' : '',
+                            ]"
+                        />
+                        Refresh
+                    </Button>
+                    <Button
+                        variant="outline"
+                        size="icon-sm"
+                        @click="isHardResetDialogOpen = true"
+                        :disabled="!currentMatchDetail || isHardResetting"
+                        title="Hard reset partai terkini (khusus pergantian event)"
+                        aria-label="Hard reset partai terkini"
+                        class="text-red-400 hover:border-red-500/50 hover:bg-red-500/10 hover:text-red-300"
+                    >
+                        <ListRestart class="h-4 w-4" />
+                    </Button>
+                </div>
             </div>
 
             <!-- Match Schedules List -->
@@ -2217,6 +2272,74 @@ onUnmounted(() => {
                             class="mr-2 h-4 w-4 animate-spin"
                         />
                         {{ isResetting ? 'Mereset...' : 'Ya' }}
+                    </Button>
+                </DialogFooter>
+            </DialogContent>
+        </Dialog>
+
+        <!-- Hard Reset Confirm Dialog -->
+        <Dialog
+            :open="isHardResetDialogOpen"
+            @update:open="
+                (val) => {
+                    if (!isHardResetting) isHardResetDialogOpen = val;
+                }
+            "
+        >
+            <DialogContent class="sm:max-w-[440px]">
+                <DialogHeader class="pb-2">
+                    <DialogTitle class="text-xl font-bold text-primary"
+                        >Hard Reset Partai Terkini ?</DialogTitle
+                    >
+                    <DialogDescription
+                        class="pt-2 text-sm text-muted-foreground"
+                    >
+                        Partai aktif
+                        <span class="font-bold text-foreground">{{
+                            currentMatchDetail?.match_code ?? '-'
+                        }}</span>
+                        beserta seluruh nilai juri di perangkat ini akan
+                        dihapus. Data tidak dikirim ke server scoring.
+                    </DialogDescription>
+                </DialogHeader>
+
+                <div
+                    class="flex gap-3 rounded-lg border border-amber-500/40 bg-amber-500/10 p-3 text-sm"
+                >
+                    <TriangleAlert
+                        class="mt-0.5 h-5 w-5 shrink-0 text-amber-400"
+                    />
+                    <div>
+                        <p class="font-bold text-amber-400">
+                            Hanya digunakan pada pergantian event.
+                        </p>
+                        <p class="mt-1 text-muted-foreground">
+                            Pakai hanya jika partai sisa event sebelumnya tidak
+                            bisa diselesaikan atau direset karena data di server
+                            sudah berganti. Untuk partai normal, gunakan tombol
+                            Reset di panel pertandingan.
+                        </p>
+                    </div>
+                </div>
+
+                <DialogFooter class="pt-2">
+                    <Button
+                        variant="ghost"
+                        @click="isHardResetDialogOpen = false"
+                        :disabled="isHardResetting"
+                    >
+                        Batal
+                    </Button>
+                    <Button
+                        variant="destructive"
+                        @click="confirmHardReset"
+                        :disabled="isHardResetting"
+                    >
+                        <RefreshCw
+                            v-if="isHardResetting"
+                            class="mr-2 h-4 w-4 animate-spin"
+                        />
+                        {{ isHardResetting ? 'Mereset...' : 'Ya, Hard Reset' }}
                     </Button>
                 </DialogFooter>
             </DialogContent>
