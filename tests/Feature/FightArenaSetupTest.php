@@ -9,6 +9,7 @@ use App\Models\Role;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Http;
+use Inertia\Testing\AssertableInertia as Assert;
 use Tests\TestCase;
 
 class FightArenaSetupTest extends TestCase
@@ -167,6 +168,75 @@ class FightArenaSetupTest extends TestCase
         );
         $this->assertNull($obsoleteMatch->refresh()->fight_schedule_id);
         $this->assertSame(2, FightSchedule::count());
+    }
+
+    public function test_match_control_lists_schedules_by_server_order_after_insert_and_reorder(): void
+    {
+        $serverPartai = fn (int $id, string $matchCode, int $matchNumber): array => [
+            'id' => $id,
+            'match_code' => $matchCode,
+            'match_number' => $matchNumber,
+            'atlete_blue' => "Biru {$matchCode}",
+            'atlete_red' => "Kuning {$matchCode}",
+            'contingent_blue' => 'Kontingen Biru',
+            'contingent_red' => 'Kontingen Kuning',
+            'match_round' => 'penyisihan',
+            'category' => 'kelas A putra',
+            'group' => 'remaja',
+            'status' => 'not_started',
+            'winner_corner' => null,
+            'winner_status' => null,
+        ];
+
+        // The server sends partai sorted by no_urut, exposed as match_number.
+        Http::fake([
+            '*/partai/tanding/5' => Http::response([
+                'success' => true,
+                'data' => [
+                    $serverPartai(102, '2', 1),
+                    $serverPartai(200, '1A', 2),
+                    $serverPartai(101, '1', 3),
+                    $serverPartai(103, '3', 4),
+                ],
+            ], 200),
+            '*' => Http::response([], 404),
+        ]);
+
+        $operator = Role::create(['name' => 'Operator']);
+        $user = User::factory()->create(['role_id' => $operator->id]);
+
+        Arena::create([
+            'id' => 1,
+            'gelanggang_id' => 3,
+            'sesi_tanding_id' => 5,
+            'arena_name' => 'HARIMAU',
+        ]);
+
+        // Synced earlier, before partai 1A was inserted and partai 2 moved up.
+        FightSchedule::create(['partai_id' => '101', 'match_code' => '1', 'match_number' => 1]);
+        FightSchedule::create(['partai_id' => '102', 'match_code' => '2', 'match_number' => 2]);
+        FightSchedule::create(['partai_id' => '103', 'match_code' => '3', 'match_number' => 3]);
+
+        $this
+            ->actingAs($user)
+            ->postJson('/api/arena/setup', [
+                'gelanggang_id' => 3,
+                'sesi_tanding_id' => 5,
+                'arena_name' => 'HARIMAU',
+            ])
+            ->assertOk();
+
+        $this
+            ->actingAs($user)
+            ->get(route('fight-match-control'))
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->component('FightMatchControl')
+                ->where(
+                    'schedules',
+                    fn ($schedules): bool => collect($schedules)->pluck('match_code')->all() === ['2', '1A', '1', '3'],
+                )
+            );
     }
 
     public function test_arena_setup_does_not_mutate_local_state_when_remote_sync_fails(): void

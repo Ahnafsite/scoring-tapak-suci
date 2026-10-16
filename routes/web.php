@@ -37,7 +37,10 @@ Route::middleware(['auth', 'verified'])->group(function () {
         }
 
         return inertia('FightMatchControl', [
-            'schedules' => FightSchedule::all(),
+            'schedules' => FightSchedule::query()
+                ->orderBy('match_number')
+                ->orderBy('id')
+                ->get(),
             'arena' => Arena::first(),
             'activeMatch' => FightMatch::first(),
             'recapJuryPoint' => FightRecapJuryPoint::all(),
